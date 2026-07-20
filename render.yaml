@@ -6,7 +6,6 @@ services:
     plan: starter
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: python render_entrypoint.py
-    maxShutdownDelaySeconds: 60
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.11
