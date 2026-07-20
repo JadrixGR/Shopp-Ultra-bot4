@@ -1,0 +1,121 @@
+SHOP ULTRA BOT - ACTUALIZACIÓN SIN PERDER DATOS
+================================================
+
+ERROR CORREGIDO
+---------------
+
+    AttributeError: 'ProviderRegistry' object has no attribute 'items'
+
+El panel administrativo trataba ProviderRegistry como un diccionario. Esta
+versión corrige el handler para usar values() y añade items(), keys() y
+__contains__ al registro de proveedores como protección de compatibilidad.
+
+PASO 1 - DETENER EL BOT ANTERIOR
+--------------------------------
+
+En la consola pulsa Ctrl+C. Cierra la ventana y comprueba en el Administrador
+de tareas que no quede ningún proceso python.exe o pythonw.exe ejecutando el
+bot. No copies SQLite mientras el bot esté activo.
+
+PASO 2 - VERIFICAR Y RESPALDAR
+------------------------------
+
+En la carpeta del bot anterior ejecuta:
+
+    verificar_datos.bat
+    respaldar_datos.bat
+
+Guarda una captura del resumen y realiza además una copia manual completa de la
+carpeta anterior.
+
+PASO 3 - DESCOMPRIMIR EN UNA CARPETA NUEVA
+-------------------------------------------
+
+No extraigas este ZIP directamente encima del bot que está funcionando.
+Descomprímelo en una carpeta nueva.
+
+PASO 4 - COPIAR SOLO LA CONFIGURACIÓN Y LOS DATOS
+--------------------------------------------------
+
+Desde el bot anterior copia:
+
+    .env
+    toda la carpeta data\
+
+Pégalos en la carpeta nueva. Los archivos principales son:
+
+    data\shop.db
+    data\shop.db-wal      (puede no existir al cerrar correctamente)
+    data\shop.db-shm      (puede no existir al cerrar correctamente)
+    data\providers.json
+
+Copiar toda la carpeta data conserva:
+
+- usuarios e IDs de Telegram;
+- saldos;
+- productos locales y productos API;
+- precios personalizados;
+- stock disponible y vendido;
+- compras, historial y entregas;
+- correos, cuentas, contraseñas, códigos y enlaces entregados;
+- depósitos y recargas;
+- reembolsos y ajustes administrativos;
+- anuncios;
+- proveedores API, URLs, claves, márgenes y sincronización;
+- emojis Premium, colores, textos, descripciones e instrucciones.
+
+El archivo .env conserva el token, administradores, Binance Pay y la
+configuración general.
+
+PASO 5 - NO COPIAR CÓDIGO ANTIGUO
+----------------------------------
+
+No copies desde el bot anterior:
+
+    app\
+    tools\
+    tests\
+    .venv\
+    __pycache__\
+    requirements.txt
+    requirements-dev.txt
+    archivos .bat antiguos
+
+Copiar app\ restauraría el código que genera el error.
+
+PASO 6 - INSTALAR E INICIAR
+----------------------------
+
+En la carpeta nueva ejecuta:
+
+    instalar_requerimientos.bat
+    iniciar_bot.bat
+
+No ejecutes configurar.bat, porque ya copiaste tu archivo .env.
+
+PASO 7 - COMPROBAR
+------------------
+
+En Telegram prueba:
+
+    /admin
+    Productos
+    Selecciona un producto local
+    Agregar stock
+
+El panel debe abrir sin AttributeError. Debe mostrar como máximo 35 productos
+por página, con los productos locales primero.
+
+Después detén una vez el bot nuevo, ejecuta verificar_datos.bat y compara:
+
+- usuarios;
+- saldo total;
+- productos;
+- stock;
+- compras;
+- depósitos;
+- pedidos API;
+- reembolsos.
+
+Finalmente inicia nuevamente el bot. No ejecutes el bot anterior y el nuevo al
+mismo tiempo con el mismo token de Telegram.

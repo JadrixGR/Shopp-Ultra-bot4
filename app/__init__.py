@@ -1,0 +1,1 @@
+"""Shop Ultra Telegram Bot."""

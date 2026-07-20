@@ -1,0 +1,32 @@
+SHOP ULTRA BOT - EDICIÓN ACTUALIZADA PARA GITHUB Y RENDER
+=========================================================
+
+Esta entrega incluye todas las mejoras acumuladas y la corrección:
+
+AttributeError: 'ProviderRegistry' object has no attribute 'items'
+
+Para trasladar el bot sin perder datos:
+
+1. Detenga el bot anterior.
+2. Ejecute COPIAR_DATOS_DEL_BOT_ANTERIOR.bat.
+3. Pruebe esta versión localmente.
+4. Ejecute PREPARAR_MIGRACION_RENDER.bat.
+5. Ejecute PUBLICAR_EN_GITHUB.bat para publicar solamente el código.
+6. Cree el Blueprint en Render.
+7. Importe MIGRACION_RENDER\.env.render en Environment.
+8. Ejecute SUBIR_DATA_A_RENDER.bat para transferir SQLite al disco persistente.
+
+NO SUBA A GITHUB:
+
+.env
+data\shop.db
+data\providers.json
+MIGRACION_RENDER\
+
+El repositorio mostrado es público. Use el BAT incluido; no cargue esos archivos
+manualmente desde el navegador.
+
+Guías:
+
+PASOS_RAPIDOS_GITHUB_RENDER.txt
+GUIA_RENDER_GITHUB.md

@@ -1,0 +1,30 @@
+services:
+  - type: worker
+    name: shopp-ultra-bot4
+    runtime: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python render_entrypoint.py
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.11
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:////var/data/shop.db
+      - key: API_PROVIDERS_FILE
+        value: /var/data/providers.json
+      - key: RENDER_DATA_DIR
+        value: /var/data
+      - key: ALLOW_EMPTY_DATABASE
+        value: "false"
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+    disk:
+      name: shop-ultra-data
+      mountPath: /var/data
+      sizeGB: 1

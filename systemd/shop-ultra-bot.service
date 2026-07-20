@@ -1,0 +1,18 @@
+[Unit]
+Description=Shop Ultra Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot
+WorkingDirectory=/opt/shop_ultra_bot
+EnvironmentFile=/opt/shop_ultra_bot/.env
+ExecStart=/opt/shop_ultra_bot/.venv/bin/python -m app.main
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

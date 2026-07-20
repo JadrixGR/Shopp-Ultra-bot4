@@ -1,0 +1,120 @@
+SHOP ULTRA BOT — CORRECCIÓN DEL PANEL DE PRODUCTOS
+
+PROBLEMA CORREGIDO
+
+El error de Telegram:
+
+    Bad Request: reply markup is too long
+
+aparecía porque el panel administrativo intentaba colocar todos los productos
+locales, externos, activos e inactivos dentro de un solo teclado. Al superar el
+tamaño aceptado por Telegram, el mensaje del panel era eliminado y el nuevo
+teclado no podía enviarse.
+
+ESTA VERSIÓN CORRIGE LO SIGUIENTE
+
+- El panel /admin → Productos se divide en páginas internas de 35 productos.
+- Los productos locales aparecen primero para facilitar la carga de stock.
+- Los productos API aparecen después de los productos locales.
+- Se muestran botones Anterior y Siguiente cuando sean necesarios.
+- La tienda pública de los clientes NO cambia: continúa mostrando su catálogo
+  en una sola lista, como estaba configurado.
+- Al abrir un producto desde una página y pulsar Volver, se regresa a esa página.
+- Si Telegram rechaza en el futuro otro teclado, el mensaje anterior ya no se
+  elimina antes de comprobar que el nuevo mensaje pudo enviarse.
+
+ACTUALIZACIÓN SIN PERDER CLIENTES, SALDOS, PRODUCTOS NI HISTORIAL
+
+1. DETÉN EL BOT ANTERIOR
+
+   En su consola pulsa Ctrl+C. Cierra la ventana y comprueba en el Administrador
+   de tareas que no quede ningún python.exe o pythonw.exe ejecutando el bot.
+
+2. RESPALDA LA INSTALACIÓN ANTERIOR
+
+   Ejecuta:
+
+       verificar_datos.bat
+       respaldar_datos.bat
+
+   Guarda una captura de las cantidades y copia manualmente toda la carpeta del
+   bot anterior como respaldo adicional.
+
+3. DESCOMPRIME ESTE ZIP EN UNA CARPETA NUEVA
+
+   No lo extraigas inicialmente encima del bot que está funcionando.
+
+4. COPIA DESDE EL BOT ANTERIOR ÚNICAMENTE:
+
+       .env
+       toda la carpeta data\
+
+   Dentro de data\ se encuentran principalmente:
+
+       data\shop.db
+       data\shop.db-wal
+       data\shop.db-shm
+       data\providers.json
+
+   Es posible que shop.db-wal y shop.db-shm no existan después de cerrar
+   correctamente el bot. La forma segura es copiar toda la carpeta data\.
+
+5. ESTOS DATOS SE CONSERVAN EN data\shop.db
+
+   - Usuarios e IDs de Telegram.
+   - Saldos de los clientes.
+   - Productos locales y productos API.
+   - Stock disponible y stock vendido.
+   - Compras, historial y entregas.
+   - Correos, cuentas, contraseñas, códigos y enlaces entregados.
+   - Depósitos y recargas.
+   - Reembolsos y ajustes administrativos.
+   - Anuncios.
+   - Precios personalizados.
+   - Emojis Premium, colores, textos y apariencia.
+   - Instrucciones y descripciones de productos.
+
+   data\providers.json conserva proveedores, URLs, API Keys, márgenes y
+   sincronización. El archivo .env conserva el token, administradores, Binance
+   y configuración general.
+
+6. NO COPIES EL CÓDIGO ANTIGUO
+
+   No copies desde el bot anterior:
+
+       app\
+       tools\
+       tests\
+       .venv\
+       __pycache__\
+       requirements.txt
+       archivos .bat antiguos
+
+   Copiar app\ restauraría el código que genera el error.
+
+7. INSTALA E INICIA
+
+   En la carpeta nueva ejecuta:
+
+       instalar_requerimientos.bat
+       iniciar_bot.bat
+
+   No ejecutes configurar.bat porque ya copiaste tu .env configurado.
+
+8. VERIFICA
+
+   En Telegram abre:
+
+       /admin → Productos
+
+   Debes ver como máximo 35 productos por página, con navegación interna.
+   Selecciona un producto local y comprueba Agregar stock.
+
+   Después detén una vez el bot nuevo, ejecuta verificar_datos.bat y compara las
+   cifras con la instalación anterior. Finalmente vuelve a iniciar el bot.
+
+IMPORTANTE
+
+No ejecutes el bot anterior y el nuevo al mismo tiempo con el mismo token de
+Telegram. No borres la copia de seguridad hasta comprobar varias compras,
+historiales, saldos y cargas de stock en la versión nueva.

@@ -1,0 +1,5 @@
+aiogram==3.29.1
+SQLAlchemy>=2.0.50,<2.2
+aiosqlite>=0.20,<1
+pydantic-settings>=2.10,<3
+httpx>=0.28,<1

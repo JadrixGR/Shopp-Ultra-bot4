@@ -1,0 +1,134 @@
+SHOP ULTRA BOT — ENTREGA CON INSTRUCCIONES Y EMOJIS PREMIUM
+Fecha: 2026-07-18
+
+ESTE PAQUETE ES UN PROYECTO COMPLETO Y LIMPIO.
+No contiene tu archivo .env, tu base de datos, tokens ni API Keys reales.
+
+MEJORAS DE ESTA VERSIÓN
+
+1. La entrega de cada compra muestra primero las instrucciones de activación y después
+   el correo, código, cuenta, enlace o clave adquirida.
+2. Las instrucciones también quedan incluidas al reenviar una compra desde Historial.
+3. Cada orden nueva guarda una copia de las instrucciones existentes al venderse.
+   Si después modificas el producto, la compra conserva sus instrucciones originales.
+4. Los emojis personalizados de Telegram Premium enviados al editar la descripción o
+   las instrucciones se guardan con su custom_emoji_id y se reconstruyen como entidades
+   de Telegram. Ya no se reducen automáticamente a un carácter estático.
+5. Se conservan selección de cantidad, stock multilínea con --, catálogo sin páginas,
+   APIs, anuncios, reembolsos, ajustes de saldo y personalización visual.
+
+IMPORTANTE SOBRE PRODUCTOS YA CREADOS
+
+La versión anterior guardó las descripciones e instrucciones como texto plano. El ID
+interno de los emojis Premium antiguos no existe en esa base de datos y no puede
+recuperarse automáticamente. Para que un emoji antiguo vuelva a animarse:
+
+/admin -> Productos -> selecciona el producto -> Descripción o Instrucciones
+
+Vuelve a enviar el texto usando el emoji desde el selector Premium de Telegram. Desde
+ese momento quedará guardado correctamente y seguirá animado después de reiniciar.
+
+ACTUALIZACIÓN SEGURA SIN PERDER CLIENTES NI VENTAS
+
+1. DETÉN EL BOT ANTERIOR
+
+   En su consola pulsa Ctrl+C. Cierra la ventana y comprueba en el Administrador de
+   tareas que no quede ejecutándose python.exe ni pythonw.exe.
+
+2. VERIFICA Y RESPALDA
+
+   En la carpeta del bot anterior ejecuta:
+
+       verificar_datos.bat
+       respaldar_datos.bat
+
+   Guarda una captura de usuarios, saldo total, productos, stock, compras, depósitos y
+   pedidos externos. Además, copia manualmente toda la carpeta anterior a otro lugar.
+
+3. DESCOMPRIME ESTE ZIP EN UNA CARPETA NUEVA
+
+   No lo descomprimas encima de la instalación activa. Ejemplo:
+
+       C:\Bots\ShopUltraEntregaPremium\
+
+4. COPIA DESDE EL BOT ANTERIOR ÚNICAMENTE
+
+       .env
+       toda la carpeta data\
+
+   La estructura principal debe quedar así:
+
+       .env
+       app\
+       data\shop.db
+       data\shop.db-wal        (solo si existe)
+       data\shop.db-shm        (solo si existe)
+       data\providers.json     (solo si existe)
+       iniciar_bot.bat
+       instalar_requerimientos.bat
+
+5. INFORMACIÓN QUE CONSERVA data\shop.db
+
+   - usuarios e IDs de Telegram;
+   - saldos recargados;
+   - compras e historial;
+   - productos locales y productos API;
+   - stock disponible y vendido;
+   - correos, cuentas, claves, códigos y enlaces entregados;
+   - depósitos y recargas;
+   - reembolsos y ajustes de saldo;
+   - anuncios;
+   - emojis, colores y textos personalizados;
+   - configuración visual.
+
+   data\providers.json conserva proveedores, URLs, API Keys, márgenes y sincronización.
+   .env conserva token del bot, administradores, Binance, Pay ID y configuración general.
+
+6. NO COPIES EL CÓDIGO ANTIGUO
+
+   No copies desde la versión anterior:
+
+       app\
+       tools\
+       tests\
+       .venv\
+       __pycache__\
+       requirements.txt
+       archivos .bat antiguos
+
+   Copiar app\ restauraría el código anterior y eliminaría estas mejoras.
+
+7. INSTALA E INICIA
+
+   En la carpeta nueva ejecuta:
+
+       instalar_requerimientos.bat
+       iniciar_bot.bat
+
+   No ejecutes configurar.bat porque ya copiarás tu .env configurado.
+
+8. MIGRACIÓN AUTOMÁTICA
+
+   En el primer inicio se agregan de forma aditiva estos campos:
+
+   - entidades Premium de la descripción;
+   - entidades Premium de las instrucciones;
+   - copia de instrucciones por orden.
+
+   No se eliminan tablas ni registros anteriores.
+
+9. COMPROBACIÓN FINAL
+
+   Después del primer inicio, detén el bot nuevo y ejecuta verificar_datos.bat. Compara
+   los resultados con la captura del bot anterior. Revisa también:
+
+   - saldo de un cliente;
+   - una compra anterior;
+   - historial y reenvío de entrega;
+   - stock existente;
+   - APIs configuradas;
+   - emojis y colores del menú.
+
+   Finalmente inicia otra vez con iniciar_bot.bat.
+
+No ejecutes al mismo tiempo el bot anterior y el nuevo con el mismo token.

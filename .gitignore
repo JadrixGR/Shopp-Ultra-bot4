@@ -1,0 +1,36 @@
+# Secretos y configuración privada
+.env
+.env.*
+!.env.example
+!.env.render.example
+
+# Entornos y cachés
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Toda la información comercial y de clientes
+# Solo se conservan en Git los archivos de ejemplo.
+data/*
+!data/.gitkeep
+!data/providers.example.json
+backups/
+MIGRACION_RENDER/
+MIGRACION_RENDER_ANTERIOR_*/
+
+# Archivos SQLite y copias
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Temporales de Render
+import_once.zip
+import_once.zip.upload
+.render-import-*/
+
+# Copias locales generadas por el asistente de migración
+RESPALDO_LOCAL_ANTES_DE_COPIAR_*/
+DATOS_COPIADOS_RESUMEN.txt

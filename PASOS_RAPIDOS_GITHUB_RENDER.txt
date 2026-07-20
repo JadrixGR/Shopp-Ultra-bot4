@@ -1,0 +1,108 @@
+SHOP ULTRA - PASOS RÁPIDOS PARA GITHUB Y RENDER
+================================================
+
+REGLA PRINCIPAL
+---------------
+El código va a GitHub. La información privada NO va a GitHub.
+
+No publique nunca:
+- .env
+- data\shop.db
+- data\providers.json
+- MIGRACION_RENDER\
+
+Su repositorio Shopp-Ultra-bot4 es público.
+
+PASO 1 - DETENER Y RESPALDAR
+----------------------------
+1. En el bot anterior pulse Ctrl+C.
+2. Cierre la consola.
+3. Verifique que no quede python.exe o pythonw.exe.
+4. Duplique manualmente la carpeta completa del bot anterior.
+
+PASO 2 - COPIAR SUS DATOS A ESTA VERSIÓN
+-----------------------------------------
+Ejecute:
+
+COPIAR_DATOS_DEL_BOT_ANTERIOR.bat
+
+El programa copiará mediante respaldo SQLite:
+- .env
+- data\shop.db
+- data\providers.json
+
+Conserva usuarios, saldos, productos, stock, compras, historial, entregas,
+depósitos, reembolsos, anuncios, APIs, precios y personalización.
+
+PASO 3 - PROBAR LOCALMENTE
+--------------------------
+Ejecute:
+
+instalar_requerimientos.bat
+iniciar_bot.bat
+
+Compruebe /admin, Productos, Historial, saldos y stock. Luego detenga el bot.
+
+PASO 4 - PREPARAR LA MIGRACIÓN A RENDER
+----------------------------------------
+Ejecute:
+
+PREPARAR_MIGRACION_RENDER.bat
+
+Pulse Enter para usar esta misma carpeta. Se generará:
+
+MIGRACION_RENDER\.env.render
+MIGRACION_RENDER\import_once.zip
+
+No suba esa carpeta a GitHub.
+
+PASO 5 - PUBLICAR EL CÓDIGO EN GITHUB
+--------------------------------------
+Ejecute:
+
+PUBLICAR_EN_GITHUB.bat
+
+La URL predeterminada es:
+https://github.com/JadrixGR/Shopp-Ultra-bot4.git
+
+El BAT publica todas las carpetas del código y bloquea archivos privados.
+No use el botón web Upload files para subir .env o data.
+
+PASO 6 - CREAR RENDER
+---------------------
+1. Render Dashboard > New > Blueprint.
+2. Seleccione JadrixGR/Shopp-Ultra-bot4.
+3. Render leerá render.yaml.
+4. Introduzca BOT_TOKEN y ADMIN_IDS cuando los solicite.
+5. Se creará un Background Worker Starter y un disco de 1 GB en /var/data.
+
+PASO 7 - VARIABLES PRIVADAS
+---------------------------
+En Render > servicio > Environment:
+- use Add from .env;
+- seleccione MIGRACION_RENDER\.env.render;
+- guarde los cambios.
+
+PASO 8 - SUBIR LA BASE AL DISCO
+-------------------------------
+1. Configure una clave SSH en Render.
+2. Abra el servicio > Connect > SSH.
+3. Copie el destino parecido a:
+   srv-xxxx@ssh.oregon.render.com
+4. Ejecute:
+
+SUBIR_DATA_A_RENDER.bat
+
+El bot validará e importará shop.db y providers.json antes de conectarse a
+Telegram.
+
+PASO 9 - VERIFICAR
+------------------
+En Logs debe aparecer:
+- Migración completada
+- usuarios=...
+- productos=...
+- compras=...
+- Iniciando Shop Ultra Bot
+
+No vuelva a iniciar el bot local con el mismo token mientras Render esté activo.

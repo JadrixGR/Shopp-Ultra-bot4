@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "code": "prodseller",
+      "name": "ProdSeller",
+      "adapter": "prodseller_v1",
+      "enabled": true,
+      "base_url": "http://51.77.244.194/v1",
+      "api_key": "psk_REEMPLAZA_CON_TU_CLAVE",
+      "api_key_header": "X-API-Key",
+      "allow_insecure_http": true,
+      "markup_percent": "20.00",
+      "auto_sync_minutes": 10,
+      "cache_seconds": 60,
+      "timeout_seconds": 20,
+      "allow_below_cost": false,
+      "order_poll_attempts": 4,
+      "order_poll_delay_seconds": 2
+    }
+  ]
+}

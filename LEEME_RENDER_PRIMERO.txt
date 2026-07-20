@@ -1,0 +1,27 @@
+SHOP ULTRA BOT - GITHUB Y RENDER
+================================
+
+ORDEN RECOMENDADO
+
+1. Descomprima este ZIP en una carpeta nueva.
+2. Detenga el bot anterior.
+3. Ejecute COPIAR_DATOS_DEL_BOT_ANTERIOR.bat para conservar y probar localmente
+   usuarios, saldos, productos, stock, compras, historial, depósitos y APIs.
+4. Ejecute PREPARAR_MIGRACION_RENDER.bat y seleccione la carpeta nueva.
+5. Ejecute PUBLICAR_EN_GITHUB.bat. Publica carpetas completas mediante Git,
+   pero excluye .env, data y MIGRACION_RENDER.
+6. En Render cree un Blueprint desde el repositorio.
+7. Importe MIGRACION_RENDER\.env.render en Environment.
+8. Configure SSH de Render y ejecute SUBIR_DATA_A_RENDER.bat.
+9. Revise los Logs y verifique los datos.
+
+ADVERTENCIA
+
+Su repositorio de GitHub es público. NO use la opción web "Upload files" para
+subir .env, data\shop.db, data\providers.json o MIGRACION_RENDER. El BAT de
+publicación está diseñado para excluirlos.
+
+Render necesita un Background Worker de pago con disco persistente para
+mantener SQLite entre reinicios y despliegues.
+
+Lea GUIA_RENDER_GITHUB.md antes del traslado final.

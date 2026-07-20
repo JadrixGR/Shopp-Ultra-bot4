@@ -1,0 +1,13 @@
+VALIDACIÓN DE ESTA ENTREGA
+==========================
+
+- 83 pruebas automatizadas superadas.
+- Prueba de integración de copia de .env, SQLite y providers.json: superada.
+- Ruff: sin errores.
+- Formato Ruff: correcto.
+- Compilación Python: correcta.
+- Corrección ProviderRegistry incluida.
+- render.yaml incluido para Background Worker Starter con disco persistente.
+- render_entrypoint.py valida e importa la base antes de iniciar Telegram.
+- PUBLICAR_EN_GITHUB.bat bloquea archivos privados.
+- Paquete sin .env, shop.db, providers.json privado ni credenciales reales.

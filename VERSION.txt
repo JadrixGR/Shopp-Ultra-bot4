@@ -1,0 +1,14 @@
+Shop Ultra Bot - Edición GitHub + Render con correcciones acumuladas
+Fecha: 2026-07-20
+
+Incluye:
+- Corrección ProviderRegistry en /admin -> Productos.
+- Paginación segura del panel administrativo y catálogo público sin páginas.
+- Compra por cantidad, stock multilínea, instrucciones y emojis Premium.
+- Historial, depósitos, reembolsos, anuncios y proveedores Multi-API.
+- Despliegue como Background Worker de Render con disco persistente.
+- Migración verificada de SQLite, providers.json y variables de entorno.
+- Publicación segura en GitHub sin .env ni datos de clientes.
+
+Repositorio configurado por defecto:
+https://github.com/JadrixGR/Shopp-Ultra-bot4.git
