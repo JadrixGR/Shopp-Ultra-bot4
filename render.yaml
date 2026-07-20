@@ -2,7 +2,7 @@ services:
   - type: worker
     name: shopp-ultra-bot4
     runtime: python
-    region: singapore
+    region: oregon
     plan: starter
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: python render_entrypoint.py
