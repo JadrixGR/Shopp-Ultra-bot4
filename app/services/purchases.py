@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import secrets
 from dataclasses import dataclass
 from decimal import Decimal
@@ -84,6 +85,10 @@ async def purchase_product(
         if user is None or product is None or not product.active or product.is_external:
             raise ProductUnavailable
 
+        infinite_payload = (product.infinite_stock_message or "").strip()
+        if product.infinite_stock and not infinite_payload:
+            raise OutOfStock
+
         unit_price = Decimal(product.price)
         total_price = unit_price * requested
         balance_result = await session.execute(
@@ -96,38 +101,56 @@ async def purchase_product(
         if new_balance is None:
             raise InsufficientBalance
 
-        candidate_ids = list(
-            (
-                await session.scalars(
-                    select(StockItem.id)
-                    .where(
-                        StockItem.product_id == product.id,
-                        StockItem.status == "available",
-                    )
-                    .order_by(StockItem.id)
-                    .limit(requested)
+        if product.infinite_stock:
+            stock_rows: list[StockItem] = []
+            for _index in range(requested):
+                nonce = secrets.token_hex(32)
+                stock_item = StockItem(
+                    product_id=product.id,
+                    payload=infinite_payload,
+                    payload_hash=hashlib.sha256(
+                        f"infinite:{product.id}:{nonce}".encode()
+                    ).hexdigest(),
+                    status="sold",
+                    sold_to_user_id=user.id,
+                    sold_at=utcnow(),
                 )
-            ).all()
-        )
-        if len(candidate_ids) != requested:
-            raise OutOfStock
+                session.add(stock_item)
+                stock_rows.append(stock_item)
+            await session.flush()
+        else:
+            candidate_ids = list(
+                (
+                    await session.scalars(
+                        select(StockItem.id)
+                        .where(
+                            StockItem.product_id == product.id,
+                            StockItem.status == "available",
+                        )
+                        .order_by(StockItem.id)
+                        .limit(requested)
+                    )
+                ).all()
+            )
+            if len(candidate_ids) != requested:
+                raise OutOfStock
 
-        stock_result = await session.execute(
-            update(StockItem)
-            .where(
-                StockItem.id.in_(candidate_ids),
-                StockItem.status == "available",
+            stock_result = await session.execute(
+                update(StockItem)
+                .where(
+                    StockItem.id.in_(candidate_ids),
+                    StockItem.status == "available",
+                )
+                .values(
+                    status="sold",
+                    sold_to_user_id=user.id,
+                    sold_at=utcnow(),
+                )
+                .returning(StockItem.id, StockItem.payload)
             )
-            .values(
-                status="sold",
-                sold_to_user_id=user.id,
-                sold_at=utcnow(),
-            )
-            .returning(StockItem.id, StockItem.payload)
-        )
-        stock_rows = sorted(stock_result.all(), key=lambda row: int(row.id))
-        if len(stock_rows) != requested:
-            raise OutOfStock
+            stock_rows = sorted(stock_result.all(), key=lambda row: int(row.id))
+            if len(stock_rows) != requested:
+                raise OutOfStock
 
         order_codes: list[str] = []
         payloads: list[str] = []

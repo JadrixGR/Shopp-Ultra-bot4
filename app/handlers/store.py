@@ -42,6 +42,7 @@ from app.services.prodseller import ProdSellerError, ProdSellerProduct
 from app.services.provider_catalog import refresh_provider_product
 from app.services.provider_options import product_provider_options
 from app.services.purchases import (
+    MAX_PURCHASE_QUANTITY,
     InsufficientBalance,
     InvalidQuantity,
     OutOfStock,
@@ -156,6 +157,8 @@ def _product_view_text(
 
 
 def _maximum_purchase_quantity(item: ProductWithStock) -> int:
+    if item.is_infinite:
+        return MAX_PURCHASE_QUANTITY
     if item.stock <= 0:
         return 0
     if not item.product.is_external:
@@ -376,6 +379,7 @@ async def _send_product_view(
         page=page,
         price=product.price,
         stock=item.stock,
+        available=item.available,
     )
 
     message = callback.message

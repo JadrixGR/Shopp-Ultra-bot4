@@ -71,6 +71,8 @@ class Product(Base):
     media_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     media_file_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    infinite_stock: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    infinite_stock_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Optional service duration used by the admin prorated-refund calculator.
     # Existing products remain NULL and the refund workflow will ask for the duration.
     service_days: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -21,10 +21,16 @@ class ProductWithStock:
         return self.product.is_external
 
     @property
+    def is_infinite(self) -> bool:
+        return bool(self.product.infinite_stock and not self.is_external)
+
+    @property
     def available(self) -> bool:
-        return self.stock > 0
+        return self.is_infinite or self.stock > 0
 
     def stock_text(self, language: str = "es") -> str:
+        if self.is_infinite:
+            return "∞"
         if not self.is_external:
             return str(self.stock)
         if not self.available:
@@ -137,7 +143,11 @@ async def create_product(
     media_type: str | None,
     media_file_id: str | None,
     button_style: str = "primary",
+    infinite_stock: bool = False,
+    infinite_stock_message: str | None = None,
 ) -> Product:
+    normalized_infinite_message = (infinite_stock_message or "").strip()
+    use_infinite_stock = bool(infinite_stock and normalized_infinite_message)
     product = Product(
         name=name.strip(),
         description=description.strip(),
@@ -152,6 +162,8 @@ async def create_product(
         media_type=media_type,
         media_file_id=media_file_id,
         active=True,
+        infinite_stock=use_infinite_stock,
+        infinite_stock_message=normalized_infinite_message if use_infinite_stock else None,
     )
     session.add(product)
     await session.flush()

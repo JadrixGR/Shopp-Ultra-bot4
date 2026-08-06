@@ -464,6 +464,11 @@ async def _show_admin_product(
             f"Costo proveedor: <b>${money(product.provider_cost or 0)}</b>\n"
             f"Última sincronización: <b>{h(synced)}</b>\n"
         )
+    elif item.is_infinite:
+        text += (
+            "Mensaje de entrega infinito:\n"
+            f"<blockquote>{h_truncate(product.infinite_stock_message or '', 1200)}</blockquote>\n"
+        )
     text += "\n📝 <b>Descripción</b>\n" + render_rich_text(
         product.description,
         product.description_entities,
@@ -477,18 +482,53 @@ async def _show_admin_product(
 
     toggle_label = "⏸ Desactivar" if product.active else "▶️ Activar"
     toggle_style = "danger" if product.active else "success"
-    first_action = (
-        button(
-            "🔄 Actualizar desde proveedor",
-            callback_data=f"admin:provider:refresh_product:{product.id}",
-            style="success",
-        )
-        if product.is_external
-        else button("➕ Agregar stock", callback_data=f"admin:stock:{product.id}", style="success")
-    )
+    if product.is_external:
+        stock_action_rows = [
+            [
+                button(
+                    "🔄 Actualizar desde proveedor",
+                    callback_data=f"admin:provider:refresh_product:{product.id}",
+                    style="success",
+                )
+            ]
+        ]
+    elif item.is_infinite:
+        stock_action_rows = [
+            [
+                button(
+                    "✏️ Cambiar frase infinita",
+                    callback_data=f"admin:infinite:start:{product.id}",
+                    style="success",
+                )
+            ],
+            [
+                button(
+                    "🔢 Volver a stock normal",
+                    callback_data=f"admin:infinite:disable:{product.id}",
+                    style="danger",
+                )
+            ],
+        ]
+    else:
+        stock_action_rows = [
+            [
+                button(
+                    "➕ Agregar stock",
+                    callback_data=f"admin:stock:{product.id}",
+                    style="success",
+                )
+            ],
+            [
+                button(
+                    "♾ Activar stock infinito",
+                    callback_data=f"admin:infinite:start:{product.id}",
+                    style="primary",
+                )
+            ],
+        ]
     markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [first_action],
+        inline_keyboard=stock_action_rows
+        + [
             [
                 button("✏️ Nombre", callback_data=f"admin:edit:name:{product.id}", style="primary"),
                 button(
@@ -812,6 +852,13 @@ async def _advance_to_stock(message: Message, state: FSMContext) -> None:
     await state.set_state(AddProductStates.waiting_stock)
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                button(
+                    "♾ Stock infinito (una frase)",
+                    callback_data="admin:add:infinite_stock",
+                    style="success",
+                )
+            ],
             [button("⏭ Crear sin stock", callback_data="admin:add:skip_stock", style="primary")],
             [button("❌ Cancelar", callback_data="admin:cancel", style="danger")],
         ]
@@ -891,13 +938,15 @@ async def add_product_skip_media(
 async def _show_product_confirmation(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     stock_items = data.get("stock_items") or []
+    infinite_message = str(data.get("infinite_stock_message") or "").strip()
+    stock_label = "∞" if infinite_message else str(len(stock_items))
     text = (
         "✅ <b>Confirma el producto</b>\n\n"
         f"Nombre: <b>{h(data['name'])}</b>\n"
         f"Precio: <b>${money(data['price'])}</b>\n"
         f"Emoji: {h(product_emoji_parts(data['emoji'])[0])}\n"
         f"Media: <b>{h(data.get('media_type') or 'sin media')}</b>\n"
-        f"Stock inicial: <b>{len(stock_items)}</b>\n\n"
+        f"Stock inicial: <b>{stock_label}</b>\n\n"
         "Descripción:\n"
         + render_rich_text(
             str(data["description"]),
@@ -912,6 +961,8 @@ async def _show_product_confirmation(message: Message, state: FSMContext) -> Non
             str(data.get("instructions_entities") or "[]"),
             max_chars=1000,
         )
+    if infinite_message:
+        text += "\n\nFrase de entrega infinita:\n" + h_truncate(infinite_message, 1200)
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [button("✅ Crear producto", callback_data="admin:add:confirm", style="success")],
@@ -936,8 +987,54 @@ async def add_product_stock(
     except StockImportError as exc:
         await message.answer(f"❌ {h(exc)}")
         return
-    await state.update_data(stock_items=items)
+    await state.update_data(
+        stock_items=items,
+        infinite_stock=False,
+        infinite_stock_message=None,
+    )
     await message.answer(f"📥 Se detectaron <b>{len(items)}</b> elementos de stock.")
+    await _show_product_confirmation(message, state)
+
+
+@router.callback_query(
+    AddProductStates.waiting_stock,
+    F.data == "admin:add:infinite_stock",
+)
+async def add_product_infinite_stock_start(
+    callback: CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not await _require_admin(callback, ctx):
+        return
+    await callback.answer()
+    await state.set_state(AddProductStates.waiting_infinite_stock_message)
+    await answer_or_replace(
+        callback,
+        "♾ <b>Stock infinito</b>\n\n"
+        "Envía la frase que recibirá el cliente en cada compra. Por ejemplo:\n\n"
+        "<code>Contactar con el admin @JadrixGR02</code>\n\n"
+        "Esta frase no se agotará ni se descontará.",
+        _admin_cancel_keyboard(),
+    )
+
+
+@router.message(AddProductStates.waiting_infinite_stock_message)
+async def add_product_infinite_stock_receive(
+    message: Message, state: FSMContext, ctx: AppContext
+) -> None:
+    if not await _require_admin(message, ctx):
+        return
+    value = (message.text or "").strip()
+    if not value:
+        await message.answer("Envía una frase de texto para la entrega infinita.")
+        return
+    if len(value) > 3000:
+        await message.answer("La frase no puede superar 3000 caracteres.")
+        return
+    await state.update_data(
+        stock_items=[],
+        infinite_stock=True,
+        infinite_stock_message=value,
+    )
     await _show_product_confirmation(message, state)
 
 
@@ -948,7 +1045,11 @@ async def add_product_skip_stock(
     if not await _require_admin(callback, ctx):
         return
     await callback.answer()
-    await state.update_data(stock_items=[])
+    await state.update_data(
+        stock_items=[],
+        infinite_stock=False,
+        infinite_stock_message=None,
+    )
     await _show_product_confirmation(callback.message, state)
 
 
@@ -975,6 +1076,8 @@ async def add_product_confirm(
             button_emoji=data["emoji"],
             media_type=data.get("media_type"),
             media_file_id=data.get("media_file_id"),
+            infinite_stock=bool(data.get("infinite_stock")),
+            infinite_stock_message=str(data.get("infinite_stock_message") or "") or None,
         )
         items = list(data.get("stock_items") or [])
         if items:
@@ -984,10 +1087,13 @@ async def add_product_confirm(
     await state.clear()
     await callback.answer("Producto creado")
     if callback.message is not None:
-        await callback.message.answer(
-            f"✅ Producto creado. Stock agregado: <b>{added}</b> · "
-            f"Duplicados omitidos: <b>{duplicates}</b>."
-        )
+        if product.infinite_stock:
+            await callback.message.answer("✅ Producto creado con stock infinito <b>∞</b>.")
+        else:
+            await callback.message.answer(
+                f"✅ Producto creado. Stock agregado: <b>{added}</b> · "
+                f"Duplicados omitidos: <b>{duplicates}</b>."
+            )
     await _show_admin_product(callback, ctx, product.id)
 
     if added > 0 and item is not None:
@@ -1008,6 +1114,90 @@ async def add_product_confirm(
 
 
 # ------------------------------- Add stock ---------------------------------
+
+
+@router.callback_query(F.data.startswith("admin:infinite:start:"))
+async def admin_infinite_stock_start(
+    callback: CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not await _require_admin(callback, ctx):
+        return
+    product_id = int(callback.data.rsplit(":", 1)[1])
+    async with ctx.session_factory() as session:
+        product = await session.get(Product, product_id)
+    if product is None:
+        await callback.answer("Producto no encontrado", show_alert=True)
+        return
+    if product.is_external:
+        await callback.answer("El stock infinito solo está disponible en productos locales.", show_alert=True)
+        return
+    await callback.answer()
+    await state.set_state(AddStockStates.waiting_infinite_message)
+    await state.update_data(product_id=product_id)
+    current = ""
+    if product.infinite_stock and product.infinite_stock_message:
+        current = (
+            "\n\nFrase actual:\n"
+            f"<blockquote>{h_truncate(product.infinite_stock_message, 1200)}</blockquote>"
+        )
+    await answer_or_replace(
+        callback,
+        f"♾ <b>Stock infinito para {h(product.name)}</b>\n\n"
+        "Envía en un solo mensaje la frase que recibirá cada cliente. Por ejemplo:\n\n"
+        "<code>Contactar con el admin @JadrixGR02</code>\n\n"
+        "Las unidades de stock normal guardadas se conservarán como respaldo."
+        f"{current}",
+        _admin_cancel_keyboard(),
+    )
+
+
+@router.message(AddStockStates.waiting_infinite_message)
+async def admin_infinite_stock_receive(
+    message: Message, state: FSMContext, ctx: AppContext
+) -> None:
+    if not await _require_admin(message, ctx):
+        return
+    value = (message.text or "").strip()
+    if not value:
+        await message.answer("Envía una frase de texto para la entrega infinita.")
+        return
+    if len(value) > 3000:
+        await message.answer("La frase no puede superar 3000 caracteres.")
+        return
+    data = await state.get_data()
+    product_id = int(data["product_id"])
+    async with ctx.session_factory() as session:
+        product = await session.get(Product, product_id)
+        if product is None or product.is_external:
+            await state.clear()
+            await message.answer("Producto local no encontrado.")
+            return
+        product.infinite_stock = True
+        product.infinite_stock_message = value
+        await session.commit()
+    await state.clear()
+    await message.answer("✅ Stock infinito activado. La tienda mostrará <b>∞</b>.")
+    await _show_admin_product(message, ctx, product_id)
+
+
+@router.callback_query(F.data.startswith("admin:infinite:disable:"))
+async def admin_infinite_stock_disable(
+    callback: CallbackQuery, state: FSMContext, ctx: AppContext
+) -> None:
+    if not await _require_admin(callback, ctx):
+        return
+    product_id = int(callback.data.rsplit(":", 1)[1])
+    async with ctx.session_factory() as session:
+        product = await session.get(Product, product_id)
+        if product is None or product.is_external:
+            await callback.answer("Producto local no encontrado", show_alert=True)
+            return
+        product.infinite_stock = False
+        product.infinite_stock_message = None
+        await session.commit()
+    await state.clear()
+    await callback.answer("Stock normal restaurado")
+    await _show_admin_product(callback, ctx, product_id)
 
 
 @router.callback_query(F.data.startswith("admin:stock:"))

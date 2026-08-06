@@ -14,6 +14,7 @@ class AddProductStates(StatesGroup):
     waiting_instructions = State()
     waiting_media = State()
     waiting_stock = State()
+    waiting_infinite_stock_message = State()
     waiting_confirmation = State()
 
 
@@ -23,6 +24,7 @@ class EditProductStates(StatesGroup):
 
 class AddStockStates(StatesGroup):
     waiting_items = State()
+    waiting_infinite_message = State()
 
 
 class EditSettingStates(StatesGroup):

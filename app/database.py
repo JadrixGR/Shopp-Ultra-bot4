@@ -64,6 +64,8 @@ async def _migrate_sqlite(connection) -> None:  # type: ignore[no-untyped-def]
         "instructions": "TEXT NOT NULL DEFAULT ''",
         "description_entities": "TEXT NOT NULL DEFAULT '[]'",
         "instructions_entities": "TEXT NOT NULL DEFAULT '[]'",
+        "infinite_stock": "BOOLEAN NOT NULL DEFAULT 0",
+        "infinite_stock_message": "TEXT",
     }
     for column, definition in product_additions.items():
         if column not in product_columns:

@@ -126,9 +126,16 @@ def store_keyboard(
 
 
 def product_keyboard(
-    language: str, *, product_id: int, page: int, price: Decimal, stock: int
+    language: str,
+    *,
+    product_id: int,
+    page: int,
+    price: Decimal,
+    stock: int,
+    available: bool | None = None,
 ) -> InlineKeyboardMarkup:
-    if stock > 0:
+    can_purchase = stock > 0 if available is None else available
+    if can_purchase:
         purchase_button = appearance_button(
             "product_buy",
             language,
