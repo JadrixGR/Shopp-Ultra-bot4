@@ -45,11 +45,12 @@ def test_customer_stock_text_never_discloses_api_source() -> None:
     item = ProductWithStock(product=product, stock=1, external_stock_known=False)
     assert item.stock_text("es") == "No informado"
     assert item.stock_text("en") == "Not reported"
+    assert item.storefront_stock_label("es") == ""
     assert "API" not in item.stock_text("es")
 
 
 @pytest.mark.asyncio
-async def test_storefront_only_lists_external_products_with_exact_stock() -> None:
+async def test_storefront_keeps_unknown_stock_with_marker_and_exact_stock_with_number() -> None:
     engine, factory = create_engine_and_session_factory("sqlite+aiosqlite:///:memory:")
     await init_database(engine)
     async with factory() as session:
@@ -80,9 +81,10 @@ async def test_storefront_only_lists_external_products_with_exact_stock() -> Non
         await session.commit()
 
         products, total = await list_active_products(session, page_size=None)
-        assert total == 1
-        assert [item.product.name for item in products] == ["Exact stock"]
-        assert products[0].stock_text("es") == "100"
+        assert total == 2
+        items = {item.product.name: item for item in products}
+        assert items["Exact stock"].storefront_stock_label("es") == "100"
+        assert items["Undisclosed stock"].storefront_stock_label("es") == ""
 
     await engine.dispose()
 

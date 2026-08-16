@@ -38,8 +38,9 @@ def render_store_animated_preview(
         icon = render_custom_emoji(product.button_emoji)
         name = h_truncate(shorten(product.name, 44), 220)
         stock_marker = "🟢" if item.available else "🔴"
-        stock = h_truncate(item.stock_text(language), 80)
-        line = f"{icon} <b>{name}</b> — <b>${money(product.price)}</b> · {stock_marker} {stock}"
+        stock = h_truncate(item.storefront_stock_label(language), 80)
+        stock_display = f"{stock_marker} {stock}" if stock else stock_marker
+        line = f"{icon} <b>{name}</b> — <b>${money(product.price)}</b> · {stock_display}"
         separator_length = 1 if lines else 0
         if rendered_length + separator_length + len(line) > _STORE_PREVIEW_MAX_CHARS:
             lines.append("…")

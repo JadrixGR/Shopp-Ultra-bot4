@@ -101,12 +101,10 @@ def store_keyboard(
         product = item.product
         fallback, custom_emoji_id = product_emoji_parts(product.button_emoji)
         prefix = "" if custom_emoji_id else f"{fallback} "
-        stock_label = item.stock_text(language)
+        stock_label = item.storefront_stock_label(language)
         stock_icon = "🟢" if item.available else "🔴"
-        label = (
-            f"{prefix}{shorten(product.name, 28)} | ${money(product.price)} | "
-            f"{stock_icon} {stock_label}"
-        )
+        stock_display = f"{stock_icon} {stock_label}" if stock_label else stock_icon
+        label = f"{prefix}{shorten(product.name, 28)} | ${money(product.price)} | {stock_display}"
         raw_style = product.button_style or "primary"
         style = None if raw_style == "default" else raw_style
         if style not in {None, "primary", "success", "danger"}:

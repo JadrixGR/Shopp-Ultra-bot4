@@ -38,8 +38,13 @@ class ProductWithStock:
         if self.external_stock_known:
             return str(self.stock)
         # This value is only used in administrative/direct views. Products
-        # without an exact provider count are excluded from the storefront.
+        # without an exact provider count use only a colored storefront marker.
         return "No informado" if language == "es" else "Not reported"
+
+    def storefront_stock_label(self, language: str = "es") -> str:
+        if self.is_external and self.available and not self.external_stock_known:
+            return ""
+        return self.stock_text(language)
 
 
 def _effective_stock(product: Product, local_stock: int) -> tuple[int, bool]:
@@ -79,25 +84,13 @@ async def list_active_products(
         Product.provider_code.is_(None),
         Product.provider_catalog_present.is_(True),
     )
-    exact_stock_available = or_(
-        Product.provider_code.is_(None),
-        Product.provider_stock.is_not(None),
-    )
     total = await session.scalar(
-        select(func.count(Product.id)).where(
-            Product.active.is_(True),
-            catalog_visible,
-            exact_stock_available,
-        )
+        select(func.count(Product.id)).where(Product.active.is_(True), catalog_visible)
     )
     query = (
         select(Product, func.coalesce(stock_subquery.c.stock, 0))
         .outerjoin(stock_subquery, Product.id == stock_subquery.c.product_id)
-        .where(
-            Product.active.is_(True),
-            catalog_visible,
-            exact_stock_available,
-        )
+        .where(Product.active.is_(True), catalog_visible)
         .order_by(Product.id.desc())
     )
     if page_size is not None:
