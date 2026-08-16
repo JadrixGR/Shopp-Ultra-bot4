@@ -171,6 +171,7 @@ async def test_legacy_users_balances_history_and_deposits_survive_upgrade(tmp_pa
     raw.close()
 
     assert "provider_price_locked" in product_columns
+    assert "provider_catalog_present" in product_columns
     assert "service_days" in product_columns
     assert "instructions" in product_columns
     assert "description_entities" in product_columns
@@ -287,6 +288,7 @@ async def test_previous_multi_api_database_keeps_provider_sales_and_adds_canboso
         assert user is not None and user.balance == Decimal("33.50")
         assert product is not None and product.price == Decimal("9.99")
         assert product.provider_code == "proveedor_anterior"
+        assert product.provider_catalog_present is True
         assert product.provider_metadata is None
         assert purchase is not None and purchase.purchase_code == "API-ANTERIOR"
         assert purchase.status == "manual_review"
@@ -299,6 +301,7 @@ async def test_previous_multi_api_database_keeps_provider_sales_and_adds_canboso
     raw.close()
 
     assert "provider_metadata" in product_columns
+    assert "provider_catalog_present" in product_columns
     assert "request_payload" in purchase_columns
 
     await engine.dispose()

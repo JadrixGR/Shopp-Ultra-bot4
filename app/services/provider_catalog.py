@@ -13,7 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Product
 from app.services.notifications import ProductNotice, broadcast_catalog_update
-from app.services.prodseller import PROVIDER_CODE, ProdSellerClient, ProdSellerProduct
+from app.services.prodseller import (
+    PROVIDER_CODE,
+    ProdSellerClient,
+    ProdSellerNotFoundError,
+    ProdSellerProduct,
+)
 from app.services.provider_options import base_provider_cost, serialize_provider_options
 from app.services.provider_registry import ProviderRuntime
 from app.services.settings import get_provider_auto_publish
@@ -80,10 +85,10 @@ async def sync_provider_catalog(
 ) -> ProviderSyncResult:
     """Synchronize provider metadata without overwriting store-owned fields.
 
-    Public name, description, emoji, media, active selection and retail price are
-    controlled by the administrator. Existing values remain untouched during
-    every API refresh. New products can be imported inactive for manual selection
-    or published automatically when the provider-specific option is enabled.
+    Public name, description, emoji, media and retail price are controlled by the
+    administrator. Existing values remain untouched during normal API refreshes.
+    Products removed from the remote catalog are deactivated and hidden, while
+    their database rows remain available to historical orders.
     """
 
     remote_products = await client.list_products(force_refresh=force_refresh)
@@ -128,6 +133,7 @@ async def sync_provider_catalog(
                 provider_cost=remote_cost,
                 provider_stock=remote_stock,
                 provider_in_stock=remote.in_stock,
+                provider_catalog_present=True,
                 provider_image_url=remote.image_url,
                 provider_metadata=remote_metadata,
                 provider_price_locked=True,
@@ -150,6 +156,7 @@ async def sync_provider_catalog(
         product.provider_cost = remote_cost
         product.provider_stock = remote_stock
         product.provider_in_stock = remote.in_stock
+        product.provider_catalog_present = True
         product.provider_image_url = remote.image_url
         product.provider_metadata = remote_metadata
         product.provider_synced_at = now
@@ -161,10 +168,13 @@ async def sync_provider_catalog(
     unavailable = 0
     for external_id, product in existing.items():
         if external_id not in seen:
+            if product.provider_catalog_present:
+                unavailable += 1
             product.provider_in_stock = False
             product.provider_stock = 0
+            product.provider_catalog_present = False
+            product.active = False
             product.provider_synced_at = now
-            unavailable += 1
 
     await session.flush()
 
@@ -203,15 +213,31 @@ async def refresh_provider_product(
 ) -> ProdSellerProduct:
     if product.provider_code != provider_code or not product.external_product_id:
         raise ValueError("Product is not linked to the selected provider")
-    remote = await client.get_product(product.external_product_id, force_refresh=force_refresh)
+    try:
+        remote = await client.get_product(product.external_product_id, force_refresh=force_refresh)
+    except ProdSellerNotFoundError:
+        await mark_provider_product_removed(session, product)
+        raise
     product.provider_cost = base_provider_cost(remote)
     product.provider_stock = _provider_stock(remote)
     product.provider_in_stock = remote.in_stock
+    product.provider_catalog_present = True
     product.provider_image_url = remote.image_url
     product.provider_metadata = serialize_provider_options(remote)
     product.provider_synced_at = datetime.now(UTC)
     await session.commit()
     return remote
+
+
+async def mark_provider_product_removed(session: AsyncSession, product: Product) -> None:
+    """Hide a remote product while preserving its orders and purchase history."""
+
+    product.provider_in_stock = False
+    product.provider_stock = 0
+    product.provider_catalog_present = False
+    product.active = False
+    product.provider_synced_at = datetime.now(UTC)
+    await session.commit()
 
 
 async def notify_provider_sync_changes(

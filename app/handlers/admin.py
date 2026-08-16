@@ -328,7 +328,10 @@ async def _admin_stats(ctx: AppContext) -> str:
         )
         api_products = int(
             await session.scalar(
-                select(func.count(Product.id)).where(Product.provider_code.is_not(None))
+                select(func.count(Product.id)).where(
+                    Product.provider_code.is_not(None),
+                    Product.provider_catalog_present.is_(True),
+                )
             )
             or 0
         )
@@ -1129,7 +1132,9 @@ async def admin_infinite_stock_start(
         await callback.answer("Producto no encontrado", show_alert=True)
         return
     if product.is_external:
-        await callback.answer("El stock infinito solo está disponible en productos locales.", show_alert=True)
+        await callback.answer(
+            "El stock infinito solo está disponible en productos locales.", show_alert=True
+        )
         return
     await callback.answer()
     await state.set_state(AddStockStates.waiting_infinite_message)

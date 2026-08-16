@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Product, StockItem
@@ -37,7 +37,10 @@ class ProductWithStock:
             return "Agotado" if language == "es" else "Sold out"
         if self.external_stock_known:
             return str(self.stock)
-        return "Disponible" if language == "es" else "Available"
+        # Some providers only confirm that at least one unit can be purchased
+        # and intentionally omit the exact count. Keep the label numeric without
+        # pretending that their undisclosed stock is unlimited.
+        return f"{max(1, self.stock)}+"
 
 
 def _effective_stock(product: Product, local_stock: int) -> tuple[int, bool]:
@@ -73,11 +76,17 @@ async def list_active_products(
         .group_by(StockItem.product_id)
         .subquery()
     )
-    total = await session.scalar(select(func.count(Product.id)).where(Product.active.is_(True)))
+    catalog_visible = or_(
+        Product.provider_code.is_(None),
+        Product.provider_catalog_present.is_(True),
+    )
+    total = await session.scalar(
+        select(func.count(Product.id)).where(Product.active.is_(True), catalog_visible)
+    )
     query = (
         select(Product, func.coalesce(stock_subquery.c.stock, 0))
         .outerjoin(stock_subquery, Product.id == stock_subquery.c.product_id)
-        .where(Product.active.is_(True))
+        .where(Product.active.is_(True), catalog_visible)
         .order_by(Product.id.desc())
     )
     if page_size is not None:
@@ -106,6 +115,12 @@ async def list_all_products(session: AsyncSession) -> list[ProductWithStock]:
         await session.execute(
             select(Product, func.coalesce(stock_subquery.c.stock, 0))
             .outerjoin(stock_subquery, Product.id == stock_subquery.c.product_id)
+            .where(
+                or_(
+                    Product.provider_code.is_(None),
+                    Product.provider_catalog_present.is_(True),
+                )
+            )
             .order_by(Product.id.desc())
         )
     ).all()

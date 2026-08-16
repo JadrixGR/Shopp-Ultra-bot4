@@ -10,8 +10,8 @@ from sqlalchemy import select
 from app.config import Settings
 from app.database import create_engine_and_session_factory, init_database
 from app.models import Product, User
-from app.services.catalog import ProductWithStock
-from app.services.external_purchases import purchase_provider_product
+from app.services.catalog import ProductWithStock, list_active_products, list_all_products
+from app.services.external_purchases import ExternalOutOfStock, purchase_provider_product
 from app.services.prodseller import ProdSellerClient
 from app.services.provider_catalog import sync_provider_catalog
 from app.services.provider_registry import (
@@ -43,8 +43,8 @@ def test_customer_stock_text_never_discloses_api_source() -> None:
         provider_in_stock=True,
     )
     item = ProductWithStock(product=product, stock=1, external_stock_known=False)
-    assert item.stock_text("es") == "Disponible"
-    assert item.stock_text("en") == "Available"
+    assert item.stock_text("es") == "1+"
+    assert item.stock_text("en") == "1+"
     assert "API" not in item.stock_text("es")
 
 
@@ -153,6 +153,117 @@ async def test_two_providers_sync_into_one_products_table_and_preserve_selection
 
     await first.close()
     await second.close()
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sync_deactivates_and_hides_products_removed_by_provider() -> None:
+    remote_products = [
+        {
+            "id": "removed-later",
+            "name": "Removed later",
+            "price": 2,
+            "stock": 7,
+        }
+    ]
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"products": list(remote_products)})
+
+    provider = client(handler)
+    engine, factory = create_engine_and_session_factory("sqlite+aiosqlite:///:memory:")
+    await init_database(engine)
+
+    async with factory() as session:
+        await sync_provider_catalog(
+            session,
+            provider,
+            provider_code="provider_one",
+            markup_percent=Decimal("10"),
+            new_products_active=True,
+        )
+        product = await session.scalar(select(Product))
+        assert product is not None and product.active is True
+        assert product.provider_catalog_present is True
+
+    remote_products.clear()
+    async with factory() as session:
+        removed = await sync_provider_catalog(
+            session,
+            provider,
+            provider_code="provider_one",
+            markup_percent=Decimal("10"),
+        )
+        product = await session.scalar(select(Product))
+        assert removed.unavailable == 1
+        assert product is not None and product.active is False
+        assert product.provider_catalog_present is False
+        assert product.provider_stock == 0
+        active, total = await list_active_products(session, page_size=None)
+        assert active == [] and total == 0
+        assert await list_all_products(session) == []
+
+    async with factory() as session:
+        repeated = await sync_provider_catalog(
+            session,
+            provider,
+            provider_code="provider_one",
+            markup_percent=Decimal("10"),
+        )
+        assert repeated.unavailable == 0
+
+    await provider.close()
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_purchase_check_hides_product_that_provider_no_longer_returns() -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"message": "Product not found"})
+
+    provider = client(handler)
+    engine, factory = create_engine_and_session_factory("sqlite+aiosqlite:///:memory:")
+    await init_database(engine)
+    async with factory() as session:
+        session.add_all(
+            [
+                User(telegram_id=90002, first_name="Buyer", balance=Decimal("10.00")),
+                Product(
+                    name="Stale external product",
+                    description="",
+                    price=Decimal("4.00"),
+                    active=True,
+                    provider_code="provider_one",
+                    external_product_id="gone",
+                    provider_in_stock=True,
+                    provider_stock=14,
+                ),
+            ]
+        )
+        await session.commit()
+        product = await session.scalar(select(Product))
+        assert product is not None
+        product_id = product.id
+
+    with pytest.raises(ExternalOutOfStock):
+        await purchase_provider_product(
+            factory,
+            provider,
+            provider_code="provider_one",
+            telegram_id=90002,
+            product_id=product_id,
+            allow_below_cost=False,
+            poll_attempts=1,
+            poll_delay_seconds=0,
+        )
+
+    async with factory() as session:
+        product = await session.get(Product, product_id)
+        assert product is not None and product.active is False
+        assert product.provider_catalog_present is False
+        assert product.provider_stock == 0
+
+    await provider.close()
     await engine.dispose()
 
 

@@ -84,6 +84,9 @@ class Product(Base):
     provider_cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     provider_stock: Mapped[int | None] = mapped_column(Integer, nullable=True)
     provider_in_stock: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # False means the provider removed this item from its current catalog. The
+    # row is retained so historical orders continue to reference it safely.
+    provider_catalog_present: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     provider_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     # JSON with provider-owned purchase requirements. It stores only catalog
     # metadata (for example required email and allowed slot durations), never a

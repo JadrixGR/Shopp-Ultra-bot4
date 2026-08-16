@@ -62,7 +62,10 @@ async def _show_providers_home(target: Message | CallbackQuery, ctx: AppContext)
             for code, count in (
                 await session.execute(
                     select(Product.provider_code, func.count(Product.id))
-                    .where(Product.provider_code.is_not(None))
+                    .where(
+                        Product.provider_code.is_not(None),
+                        Product.provider_catalog_present.is_(True),
+                    )
                     .group_by(Product.provider_code)
                 )
             ).all()
@@ -73,7 +76,11 @@ async def _show_providers_home(target: Message | CallbackQuery, ctx: AppContext)
             for code, count in (
                 await session.execute(
                     select(Product.provider_code, func.count(Product.id))
-                    .where(Product.provider_code.is_not(None), Product.active.is_(True))
+                    .where(
+                        Product.provider_code.is_not(None),
+                        Product.provider_catalog_present.is_(True),
+                        Product.active.is_(True),
+                    )
                     .group_by(Product.provider_code)
                 )
             ).all()
@@ -119,7 +126,7 @@ async def _show_providers_home(target: Message | CallbackQuery, ctx: AppContext)
         "hayas definido.\n\n"
         "Para agregar, editar o eliminar conexiones ejecuta <code>configurar_apis.bat</code> "
         "y reinicia el bot. Esta versión incluye adaptadores para ProdSeller API v1 "
-        "y Canboso Buyer API 1.2."
+        "y Canboso Buyer API 2.1."
     )
     if not runtimes:
         text += "\n\nNo hay proveedores activos."
@@ -151,7 +158,10 @@ async def _show_provider(target: Message | CallbackQuery, ctx: AppContext, code:
     async with ctx.session_factory() as session:
         imported = int(
             await session.scalar(
-                select(func.count(Product.id)).where(Product.provider_code == code)
+                select(func.count(Product.id)).where(
+                    Product.provider_code == code,
+                    Product.provider_catalog_present.is_(True),
+                )
             )
             or 0
         )
@@ -159,6 +169,7 @@ async def _show_provider(target: Message | CallbackQuery, ctx: AppContext, code:
             await session.scalar(
                 select(func.count(Product.id)).where(
                     Product.provider_code == code,
+                    Product.provider_catalog_present.is_(True),
                     Product.active.is_(True),
                 )
             )
@@ -373,7 +384,10 @@ async def _show_catalog(
     async with ctx.session_factory() as session:
         total = int(
             await session.scalar(
-                select(func.count(Product.id)).where(Product.provider_code == code)
+                select(func.count(Product.id)).where(
+                    Product.provider_code == code,
+                    Product.provider_catalog_present.is_(True),
+                )
             )
             or 0
         )
@@ -382,7 +396,10 @@ async def _show_catalog(
         products = (
             await session.scalars(
                 select(Product)
-                .where(Product.provider_code == code)
+                .where(
+                    Product.provider_code == code,
+                    Product.provider_catalog_present.is_(True),
+                )
                 .order_by(Product.active.desc(), Product.name.asc(), Product.id.asc())
                 .offset(page * PAGE_SIZE)
                 .limit(PAGE_SIZE)
@@ -479,7 +496,7 @@ async def provider_select_product(
     notice: ProductNotice | None = None
     async with ctx.session_factory() as session:
         product = await session.get(Product, product_id)
-        if product is None or not product.is_external:
+        if product is None or not product.is_external or not product.provider_catalog_present:
             await callback.answer("Producto externo no encontrado", show_alert=True)
             return
         code = product.provider_code or ""
@@ -528,6 +545,7 @@ async def provider_activate_available(
             await session.scalars(
                 select(Product).where(
                     Product.provider_code == code,
+                    Product.provider_catalog_present.is_(True),
                     Product.active.is_(False),
                     Product.provider_in_stock.is_not(False),
                     (Product.provider_stock.is_(None) | (Product.provider_stock > 0)),

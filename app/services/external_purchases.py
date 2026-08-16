@@ -25,6 +25,7 @@ from app.services.prodseller import (
     ProdSellerServerError,
     ProdSellerTransportError,
 )
+from app.services.provider_catalog import mark_provider_product_removed
 from app.services.provider_options import (
     ProviderProductOptions,
     base_provider_cost,
@@ -428,7 +429,13 @@ async def purchase_provider_product(
         remote = await client.get_product(external_product_id, force_refresh=True)
     except ProdSellerOutOfStockError as exc:
         raise ExternalOutOfStock from exc
-    except (ProdSellerNotFoundError, ProdSellerBadRequestError) as exc:
+    except ProdSellerNotFoundError as exc:
+        async with session_factory() as session:
+            removed = await session.get(Product, product_id)
+            if removed is not None:
+                await mark_provider_product_removed(session, removed)
+        raise ExternalOutOfStock from exc
+    except ProdSellerBadRequestError as exc:
         raise ExternalOutOfStock from exc
     except ProdSellerAuthenticationError as exc:
         raise ExternalProviderAuthenticationFailed from exc
@@ -522,7 +529,18 @@ async def purchase_provider_product(
                 reason=f"provider_rate_limit:{exc}",
             )
         raise ExternalProviderRateLimited from exc
-    except (ProdSellerBadRequestError, ProdSellerNotFoundError) as exc:
+    except ProdSellerNotFoundError as exc:
+        async with session_factory() as session:
+            product = await session.get(Product, reservation.product_id)
+            if product is not None:
+                await mark_provider_product_removed(session, product)
+            await refund_provider_purchase(
+                session,
+                purchase_id=reservation.purchase_id,
+                reason=f"provider_rejected:{exc}",
+            )
+        raise ExternalOrderRejected(str(exc)) from exc
+    except ProdSellerBadRequestError as exc:
         async with session_factory() as session:
             await refund_provider_purchase(
                 session,

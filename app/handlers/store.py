@@ -314,9 +314,9 @@ async def _refresh_external_item(
                         provider_code=runtime.config.code,
                         force_refresh=force_refresh,
                     )
-                    item = await get_product_with_stock(session, product_id)
                 except ProdSellerError:
                     logger.exception("Could not refresh external product %s", product_id)
+                item = await get_product_with_stock(session, product_id)
         return item
 
 

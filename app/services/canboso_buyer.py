@@ -31,7 +31,8 @@ from app.services.prodseller import (
 logger = logging.getLogger(__name__)
 
 ADAPTER_CODE = "canboso_buyer_v1"
-_API_PATH = "/api/telegram-buyer"
+_API_PATH = "/api/v2/telegram-buyer"
+_LEGACY_API_PATH = "/api/telegram-buyer"
 _CENTS = Decimal("0.01")
 
 
@@ -60,7 +61,22 @@ def _optional_int(value: Any) -> int | None:
 
 
 def _currency(raw: dict[str, Any]) -> str:
-    return str(raw.get("walletCurrency") or "USDT").strip().upper() or "USDT"
+    return str(raw.get("walletCurrency") or raw.get("currency") or "USDT").strip().upper() or "USDT"
+
+
+def _money_object(value: Any, *, label: str) -> Decimal | None:
+    if not isinstance(value, dict):
+        return None
+    currency = str(value.get("currency") or "USD").strip().upper() or "USD"
+    if currency not in {"USD", "USDT"}:
+        raise ProdSellerAPIError(
+            f"Canboso returned {label} in {currency}. "
+            "The Shop Ultra wallet uses USDT and cannot safely infer the conversion."
+        )
+    amount = _optional_decimal(value.get("amount"))
+    if amount is None:
+        raise ProdSellerAPIError(f"Canboso returned {label} without an amount")
+    return amount.quantize(_CENTS)
 
 
 def _usd_value(
@@ -114,49 +130,74 @@ def _image_url(raw: dict[str, Any]) -> str | None:
     if not value:
         return None
     parsed = urlparse(value)
-    return value if parsed.scheme in {"http", "https"} and parsed.netloc else None
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return value
+    if value.startswith("/"):
+        return f"https://canboso.com{value}"
+    return None
 
 
 def _parse_product(raw: Any) -> ProdSellerProduct:
     if not isinstance(raw, dict):
         raise ProdSellerAPIError("Canboso returned an invalid product object", response_data=raw)
 
-    product_id = str(raw.get("_id") or raw.get("product_id") or raw.get("id") or "").strip()
+    product_id = str(
+        raw.get("productId") or raw.get("_id") or raw.get("product_id") or raw.get("id") or ""
+    ).strip()
     name = str(
         raw.get("product_name") or raw.get("product_name_raw") or raw.get("name") or ""
     ).strip()
     if not product_id or not name:
         raise ProdSellerAPIError(
-            "Canboso product is missing _id/product_id or product_name",
+            "Canboso product is missing productId or name",
             response_data=raw,
         )
 
-    price = _usd_value(
-        raw,
-        usd_keys=("usdPricing", "priceUsd", "usd_price"),
-        native_keys=("walletPricing", "pricing", "price"),
-        required=True,
-        label="the product price",
-    )
+    price = _money_object(raw.get("price"), label="the product price")
+    if price is None:
+        price = _usd_value(
+            raw,
+            usd_keys=("usdPricing", "priceUsd", "usd_price"),
+            native_keys=("walletPricing", "pricing", "price"),
+            required=True,
+            label="the product price",
+        )
 
-    stats = raw.get("stats") if isinstance(raw.get("stats"), dict) else {}
+    availability = raw.get("availability") if isinstance(raw.get("availability"), dict) else None
+    stats = availability or (raw.get("stats") if isinstance(raw.get("stats"), dict) else {})
     available = _optional_int(stats.get("available"))
     total = _optional_int(stats.get("total"))
     sold = max(0, _optional_int(stats.get("sold")) or 0)
     if available is None and total is not None:
         available = max(0, total - sold)
 
-    is_slot = bool(raw.get("isSlotProduct")) or product_id == "slot_chatgpt_business"
-    requires_email = bool(raw.get("requiresCustomerEmail")) or is_slot
-    requires_months = bool(raw.get("requiresSlotMonths")) or is_slot
-    durations = _slot_durations(raw.get("slotDurations"))
+    requirements = (
+        raw.get("purchaseRequirements")
+        if isinstance(raw.get("purchaseRequirements"), dict)
+        else None
+    )
+    is_slot = (
+        str(raw.get("productType") or "").strip().lower() == "slot"
+        or bool(raw.get("isSlotProduct"))
+        or product_id == "slot_chatgpt_business"
+    )
+    if requirements is not None:
+        requires_email = bool(requirements.get("customerEmail"))
+        requires_months = bool(requirements.get("slotMonths"))
+        durations = _slot_durations(requirements.get("allowedMonths"))
+        quantity_fixed_raw = requirements.get("quantityFixed")
+    else:
+        requires_email = bool(raw.get("requiresCustomerEmail")) or is_slot
+        requires_months = bool(raw.get("requiresSlotMonths")) or is_slot
+        durations = _slot_durations(raw.get("slotDurations"))
+        quantity_fixed_raw = raw.get("quantityFixed")
     if requires_months and not durations:
         durations = (1,)
 
-    quantity_fixed = _optional_int(raw.get("quantityFixed")) or 1
+    quantity_fixed = _optional_int(quantity_fixed_raw) or 1
     quantity_fixed = min(100, max(1, quantity_fixed))
     pricing_mode_raw = str(raw.get("slotPricingMode") or "").strip().lower()
-    pricing_mode = pricing_mode_raw or None
+    pricing_mode = pricing_mode_raw or ("per_month" if requires_months else None)
 
     in_stock = available is None or available > 0
     return ProdSellerProduct(
@@ -227,6 +268,8 @@ def _account_payload(accounts: Any) -> list[str]:
             ("Usuario", "user"),
             ("Contraseña", "password"),
             ("Correo de verificación", "verifyEmail"),
+            ("Vencimiento", "expiryText"),
+            ("Información adicional", "otherInfo"),
             ("ID del producto", "productItemId"),
             ("Entregado", "deliveredAt"),
         )
@@ -247,53 +290,89 @@ def _parse_order(raw: Any) -> ProdSellerOrder:
             str(raw.get("message") or "Purchase rejected"), response_data=raw
         )
 
-    order_id = str(raw.get("orderCode") or raw.get("orderId") or raw.get("id") or "").strip()
+    order_raw = raw.get("order") if isinstance(raw.get("order"), dict) else raw
+    payment_raw = raw.get("payment") if isinstance(raw.get("payment"), dict) else raw
+    delivery_raw = raw.get("delivery") if isinstance(raw.get("delivery"), dict) else raw
+    is_v2 = order_raw is not raw or payment_raw is not raw or delivery_raw is not raw
+
+    order_id = str(
+        order_raw.get("orderCode") or order_raw.get("orderId") or order_raw.get("id") or ""
+    ).strip()
     if not order_id:
         raise ProdSellerAPIError(
             "Canboso purchase response is missing orderCode", response_data=raw
         )
 
-    delivered = _account_payload(raw.get("deliveredAccounts"))
+    delivered = _account_payload(
+        delivery_raw.get("accounts")
+        if isinstance(delivery_raw.get("accounts"), list)
+        else order_raw.get("deliveredAccounts")
+    )
 
-    single = raw.get("deliveredKey")
+    single = delivery_raw.get("deliveredKey") or order_raw.get("deliveredKey")
     if single is not None and str(single).strip():
         delivered.append(str(single).strip())
-    many = raw.get("deliveredKeys")
+    many = delivery_raw.get("deliveredKeys") or order_raw.get("deliveredKeys")
     if isinstance(many, list):
         for item in many:
             value = str(item).strip()
             if value and value not in delivered:
                 delivered.append(value)
 
-    workspace_status = str(raw.get("workspaceInviteStatus") or "").strip()
-    customer_email = str(raw.get("customerEmail") or "").strip()
-    owner_email = str(raw.get("workspaceOwnerEmail") or "").strip()
-    invite_error = str(raw.get("inviteError") or "").strip()
+    remote_status = str(order_raw.get("status") or "").strip().lower()
+    fulfillment_status = str(order_raw.get("fulfillmentStatus") or "").strip().lower()
+    completed = (
+        bool(order_raw.get("autoCompleted"))
+        or fulfillment_status
+        in {
+            "completed",
+            "delivered",
+            "fulfilled",
+        }
+        or remote_status in {"completed", "delivered", "fulfilled"}
+    )
+
+    workspace_status = str(order_raw.get("workspaceInviteStatus") or "").strip()
+    customer_email = str(order_raw.get("customerEmail") or "").strip()
+    owner_email = str(order_raw.get("workspaceOwnerEmail") or "").strip()
+    invite_error = str(order_raw.get("inviteError") or "").strip()
     if workspace_status or customer_email or owner_email:
         lines = ["ChatGPT Business Slot"]
         if customer_email:
             lines.append(f"Correo del cliente: {customer_email}")
-        if raw.get("slotMonths") is not None:
-            lines.append(f"Duración: {raw.get('slotMonths')} mes(es)")
+        if order_raw.get("slotMonths") is not None:
+            lines.append(f"Duración: {order_raw.get('slotMonths')} mes(es)")
         if workspace_status:
             lines.append(f"Estado de invitación: {workspace_status}")
         if owner_email:
             lines.append(f"Correo del workspace: {owner_email}")
         if invite_error:
             lines.append(f"Observación: {invite_error}")
-        delivered.append("\n".join(lines))
+        if not is_v2 or completed:
+            delivered.append("\n".join(lines))
 
-    status = "delivered" if delivered and not invite_error else "pending"
-    quantity = _optional_int(raw.get("finalQuantity")) or _optional_int(raw.get("quantity")) or 1
+    delivery_note = str(delivery_raw.get("message") or delivery_raw.get("text") or "").strip()
+    if is_v2 and completed and delivery_note and delivery_note not in delivered:
+        delivered.append(delivery_note)
+
+    if remote_status in {"failed", "cancelled", "refunded"}:
+        status = remote_status
+    else:
+        status = "delivered" if delivered and not invite_error else "pending"
+    quantity = (
+        _optional_int(order_raw.get("finalQuantity"))
+        or _optional_int(order_raw.get("quantity"))
+        or 1
+    )
     amount = _usd_value(
-        raw,
+        payment_raw,
         usd_keys=("amountUsd",),
         native_keys=("amount",),
         required=False,
         label="the order amount",
     )
     discount_amount = _usd_value(
-        raw,
+        payment_raw,
         usd_keys=("discountAmountUsd",),
         native_keys=("discountAmount",),
         required=False,
@@ -303,23 +382,30 @@ def _parse_order(raw: Any) -> ProdSellerOrder:
     return ProdSellerOrder(
         order_id=order_id,
         status=status,
-        product_id=None,
+        product_id=(
+            str(order_raw.get("productId")).strip() if order_raw.get("productId") else None
+        ),
         product_name=str(
-            raw.get("productType") or raw.get("productTypeRaw") or "Producto API"
+            order_raw.get("productName")
+            or order_raw.get("productType")
+            or order_raw.get("productTypeRaw")
+            or "Producto API"
         ).strip()
         or "Producto API",
         quantity=max(1, quantity),
         amount=amount,
-        discount_percent=_decimal(raw.get("discountPercent")).quantize(_CENTS),
+        discount_percent=_decimal(payment_raw.get("discountPercent")).quantize(_CENTS),
         discount_amount=discount_amount,
         delivered_keys=tuple(delivered),
-        created_at=(str(raw.get("createdAt")).strip() if raw.get("createdAt") else None),
+        created_at=(
+            str(order_raw.get("createdAt")).strip() if order_raw.get("createdAt") else None
+        ),
         raw=dict(raw),
     )
 
 
 class CanbosoBuyerClient(ProdSellerClient):
-    """Adapter for Canboso Buyer API 1.2.0.
+    """Adapter for Canboso Buyer API 2.1.0.
 
     Authentication is sent as the ``key`` query parameter for reads and as the
     ``key`` field in the purchase JSON body, exactly as documented by the API.
@@ -359,12 +445,12 @@ class CanbosoBuyerClient(ProdSellerClient):
                 provider_name,
             )
 
-        if configured_url.lower().endswith(_API_PATH):
-            api_root = configured_url
-            public_base = configured_url[: -len(_API_PATH)] or configured_url
-        else:
-            api_root = f"{configured_url}{_API_PATH}"
-            public_base = configured_url
+        public_base = configured_url
+        for suffix in (_API_PATH, _LEGACY_API_PATH):
+            if public_base.lower().endswith(suffix):
+                public_base = public_base[: -len(suffix)] or configured_url
+                break
+        api_root = f"{public_base}{_API_PATH}"
 
         self.base_url = public_base
         self.api_root = api_root
@@ -375,7 +461,7 @@ class CanbosoBuyerClient(ProdSellerClient):
             headers={
                 "Accept": "application/json",
                 "Content-Type": "application/json",
-                "User-Agent": "Shop-Ultra-Bot/Canboso-Buyer-v1",
+                "User-Agent": "Shop-Ultra-Bot/Canboso-Buyer-v2",
             },
             timeout=httpx.Timeout(timeout_seconds),
             follow_redirects=False,
@@ -559,7 +645,7 @@ class CanbosoBuyerClient(ProdSellerClient):
     async def get_order(self, order_id: str) -> ProdSellerOrder:
         del order_id
         raise ProdSellerBadRequestError(
-            "Canboso Buyer API 1.2.0 does not expose an order-status endpoint. "
+            "Canboso Buyer API 2.1.0 does not expose an order-status endpoint. "
             "Review the order in the provider panel before refunding it."
         )
 
