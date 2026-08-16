@@ -43,9 +43,48 @@ def test_customer_stock_text_never_discloses_api_source() -> None:
         provider_in_stock=True,
     )
     item = ProductWithStock(product=product, stock=1, external_stock_known=False)
-    assert item.stock_text("es") == "∞"
-    assert item.stock_text("en") == "∞"
+    assert item.stock_text("es") == "No informado"
+    assert item.stock_text("en") == "Not reported"
     assert "API" not in item.stock_text("es")
+
+
+@pytest.mark.asyncio
+async def test_storefront_only_lists_external_products_with_exact_stock() -> None:
+    engine, factory = create_engine_and_session_factory("sqlite+aiosqlite:///:memory:")
+    await init_database(engine)
+    async with factory() as session:
+        session.add_all(
+            [
+                Product(
+                    name="Exact stock",
+                    description="",
+                    price=Decimal("2.00"),
+                    active=True,
+                    provider_code="provider_one",
+                    external_product_id="exact",
+                    provider_in_stock=True,
+                    provider_stock=100,
+                ),
+                Product(
+                    name="Undisclosed stock",
+                    description="",
+                    price=Decimal("2.00"),
+                    active=True,
+                    provider_code="provider_one",
+                    external_product_id="unknown",
+                    provider_in_stock=True,
+                    provider_stock=None,
+                ),
+            ]
+        )
+        await session.commit()
+
+        products, total = await list_active_products(session, page_size=None)
+        assert total == 1
+        assert [item.product.name for item in products] == ["Exact stock"]
+        assert products[0].stock_text("es") == "100"
+
+    await engine.dispose()
 
 
 def test_provider_config_upgrades_legacy_prodseller_transport() -> None:

@@ -37,9 +37,9 @@ class ProductWithStock:
             return "Agotado" if language == "es" else "Sold out"
         if self.external_stock_known:
             return str(self.stock)
-        # Some provider-managed services have no published inventory count. A
-        # numeric fallback such as 1 would look exact even though it is not.
-        return "∞"
+        # This value is only used in administrative/direct views. Products
+        # without an exact provider count are excluded from the storefront.
+        return "No informado" if language == "es" else "Not reported"
 
 
 def _effective_stock(product: Product, local_stock: int) -> tuple[int, bool]:
@@ -79,13 +79,25 @@ async def list_active_products(
         Product.provider_code.is_(None),
         Product.provider_catalog_present.is_(True),
     )
+    exact_stock_available = or_(
+        Product.provider_code.is_(None),
+        Product.provider_stock.is_not(None),
+    )
     total = await session.scalar(
-        select(func.count(Product.id)).where(Product.active.is_(True), catalog_visible)
+        select(func.count(Product.id)).where(
+            Product.active.is_(True),
+            catalog_visible,
+            exact_stock_available,
+        )
     )
     query = (
         select(Product, func.coalesce(stock_subquery.c.stock, 0))
         .outerjoin(stock_subquery, Product.id == stock_subquery.c.product_id)
-        .where(Product.active.is_(True), catalog_visible)
+        .where(
+            Product.active.is_(True),
+            catalog_visible,
+            exact_stock_available,
+        )
         .order_by(Product.id.desc())
     )
     if page_size is not None:
