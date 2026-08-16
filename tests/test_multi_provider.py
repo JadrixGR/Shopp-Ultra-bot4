@@ -43,8 +43,8 @@ def test_customer_stock_text_never_discloses_api_source() -> None:
         provider_in_stock=True,
     )
     item = ProductWithStock(product=product, stock=1, external_stock_known=False)
-    assert item.stock_text("es") == "1+"
-    assert item.stock_text("en") == "1+"
+    assert item.stock_text("es") == "1"
+    assert item.stock_text("en") == "1"
     assert "API" not in item.stock_text("es")
 
 

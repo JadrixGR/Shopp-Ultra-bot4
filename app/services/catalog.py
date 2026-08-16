@@ -37,10 +37,10 @@ class ProductWithStock:
             return "Agotado" if language == "es" else "Sold out"
         if self.external_stock_known:
             return str(self.stock)
-        # Some providers only confirm that at least one unit can be purchased
-        # and intentionally omit the exact count. Keep the label numeric without
-        # pretending that their undisclosed stock is unlimited.
-        return f"{max(1, self.stock)}+"
+        # Some providers only confirm that one unit can currently be purchased
+        # and omit the total inventory. Keep every customer-facing stock label
+        # numeric and let exact counts pass through the branch above.
+        return str(max(1, self.stock))
 
 
 def _effective_stock(product: Product, local_stock: int) -> tuple[int, bool]:
