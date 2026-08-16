@@ -131,7 +131,7 @@ def run_gui() -> int:
 
     ttk.Label(frame, text="Base URL").grid(row=3, column=0, sticky="w", pady=5)
     url_entry = ttk.Entry(frame)
-    url_entry.insert(0, values.get("PRODSELLER_BASE_URL", "http://51.77.244.194/v1"))
+    url_entry.insert(0, values.get("PRODSELLER_BASE_URL", "https://prodseller.com/v1"))
     url_entry.grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
 
     ttk.Label(frame, text="API Key").grid(row=4, column=0, sticky="w", pady=5)
@@ -255,8 +255,8 @@ def run_console() -> int:
     print("\nCONFIGURACIÓN PRODSELLER API")
     enabled = input("Activar ProdSeller [S/N]: ").strip().upper() == "S"
     base_url = input(
-        f"Base URL [{values.get('PRODSELLER_BASE_URL', 'http://51.77.244.194/v1')}]: "
-    ).strip() or values.get("PRODSELLER_BASE_URL", "http://51.77.244.194/v1")
+        f"Base URL [{values.get('PRODSELLER_BASE_URL', 'https://prodseller.com/v1')}]: "
+    ).strip() or values.get("PRODSELLER_BASE_URL", "https://prodseller.com/v1")
     api_key = input("API Key psk_: ").strip() or values.get("PRODSELLER_API_KEY", "")
     markup = input(
         f"Margen porcentual [{values.get('PRODSELLER_MARKUP_PERCENT', '20')}]: "

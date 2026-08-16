@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 from app.config import Settings
 from app.services.canboso_buyer import CanbosoBuyerClient
-from app.services.prodseller import ProdSellerClient
+from app.services.prodseller import ProdSellerClient, normalize_prodseller_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,11 @@ class ProviderConfig:
         adapter = str(raw.get("adapter") or PRODSELLER_ADAPTER_CODE).strip().lower()
         enabled = bool(raw.get("enabled", True))
         allow_http = bool(raw.get("allow_insecure_http", False))
+        if adapter == PRODSELLER_ADAPTER_CODE:
+            upgraded_base_url = normalize_prodseller_base_url(base_url)
+            if upgraded_base_url != base_url:
+                base_url = upgraded_base_url
+                allow_http = False
 
         if not name:
             raise ProviderConfigError("El proveedor debe tener un nombre")

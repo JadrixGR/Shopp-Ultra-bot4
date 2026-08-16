@@ -49,7 +49,9 @@ class Settings(BaseSettings):
 
     # ProdSeller external catalog and instant fulfillment.
     prodseller_enabled: bool = Field(default=False, alias="PRODSELLER_ENABLED")
-    prodseller_base_url: str = Field(default="http://51.77.244.194/v1", alias="PRODSELLER_BASE_URL")
+    prodseller_base_url: str = Field(
+        default="https://prodseller.com/v1", alias="PRODSELLER_BASE_URL"
+    )
     prodseller_api_key: SecretStr | None = Field(default=None, alias="PRODSELLER_API_KEY")
     prodseller_allow_insecure_http: bool = Field(
         default=False, alias="PRODSELLER_ALLOW_INSECURE_HTTP"

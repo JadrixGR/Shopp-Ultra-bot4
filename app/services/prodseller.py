@@ -15,6 +15,25 @@ import httpx
 logger = logging.getLogger(__name__)
 
 PROVIDER_CODE = "prodseller"
+DEFAULT_PRODSELLER_BASE_URL = "https://prodseller.com/v1"
+_PRODSELLER_CANONICAL_HOSTS = frozenset(
+    {
+        "51.77.244.194",
+        "prodseller.com",
+        "www.prodseller.com",
+    }
+)
+
+
+def normalize_prodseller_base_url(value: str) -> str:
+    """Upgrade known ProdSeller v1 URLs to the current HTTPS endpoint."""
+
+    normalized = value.strip().rstrip("/")
+    parsed = urlparse(normalized)
+    path = parsed.path.rstrip("/")
+    if parsed.hostname in _PRODSELLER_CANONICAL_HOSTS and path in {"", "/v1"}:
+        return DEFAULT_PRODSELLER_BASE_URL
+    return normalized
 
 
 class ProdSellerError(Exception):
@@ -269,7 +288,7 @@ class ProdSellerClient:
         api_key = api_key.strip()
         api_key_header = api_key_header.strip()
         provider_name = provider_name.strip() or "Proveedor API"
-        base_url = base_url.strip().rstrip("/")
+        base_url = normalize_prodseller_base_url(base_url)
         parsed = urlparse(base_url)
         if not api_key:
             raise ProdSellerConfigurationError(f"{provider_name} API key is empty")
@@ -355,6 +374,12 @@ class ProdSellerClient:
             raise ProdSellerTransportError(message) from exc
 
         self._update_rate_limit(response.headers)
+        if 300 <= response.status_code < 400:
+            raise ProdSellerAPIError(
+                f"{self.provider_name} redirigió la solicitud (HTTP {response.status_code}). "
+                f"Configura la Base URL como {DEFAULT_PRODSELLER_BASE_URL}.",
+                status_code=response.status_code,
+            )
         try:
             data: Any = response.json()
         except ValueError:

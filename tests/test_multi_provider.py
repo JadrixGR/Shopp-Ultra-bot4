@@ -14,7 +14,11 @@ from app.services.catalog import ProductWithStock
 from app.services.external_purchases import purchase_provider_product
 from app.services.prodseller import ProdSellerClient
 from app.services.provider_catalog import sync_provider_catalog
-from app.services.provider_registry import build_provider_registry, load_provider_configs
+from app.services.provider_registry import (
+    ProviderConfig,
+    build_provider_registry,
+    load_provider_configs,
+)
 
 
 def client(handler, *, header: str = "X-API-Key", name: str = "Provider") -> ProdSellerClient:  # type: ignore[no-untyped-def]
@@ -42,6 +46,23 @@ def test_customer_stock_text_never_discloses_api_source() -> None:
     assert item.stock_text("es") == "Disponible"
     assert item.stock_text("en") == "Available"
     assert "API" not in item.stock_text("es")
+
+
+def test_provider_config_upgrades_legacy_prodseller_transport() -> None:
+    config = ProviderConfig.from_dict(
+        {
+            "code": "pon",
+            "name": "Pon",
+            "adapter": "prodseller_v1",
+            "enabled": True,
+            "base_url": "http://51.77.244.194/v1",
+            "api_key": "psk_test_key",
+            "allow_insecure_http": True,
+        }
+    )
+
+    assert config.base_url == "https://prodseller.com/v1"
+    assert config.allow_insecure_http is False
 
 
 @pytest.mark.asyncio

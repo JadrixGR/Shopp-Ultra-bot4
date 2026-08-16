@@ -71,7 +71,7 @@ def load_raw_configs() -> list[dict[str, Any]]:
             "name": "ProdSeller",
             "adapter": PRODSELLER_ADAPTER_CODE,
             "enabled": True,
-            "base_url": env.get("PRODSELLER_BASE_URL", "http://51.77.244.194/v1"),
+            "base_url": env.get("PRODSELLER_BASE_URL", "https://prodseller.com/v1"),
             "api_key": key,
             "api_key_header": "X-API-Key",
             "allow_insecure_http": env.get("PRODSELLER_ALLOW_INSECURE_HTTP", "false").lower()
@@ -146,7 +146,7 @@ def run_gui() -> int:
         "adapter": tk.StringVar(value=PRODSELLER_ADAPTER_CODE),
         "name": tk.StringVar(),
         "code": tk.StringVar(),
-        "base_url": tk.StringVar(value="https://"),
+        "base_url": tk.StringVar(value="https://prodseller.com/v1"),
         "api_key": tk.StringVar(),
         "api_key_header": tk.StringVar(value="X-API-Key"),
         "markup_percent": tk.StringVar(value="20"),
@@ -250,13 +250,13 @@ def run_gui() -> int:
         adapter = str(fields["adapter"].get())
         current_url = str(fields["base_url"].get()).strip()
         if adapter == CANBOSO_ADAPTER_CODE:
-            if current_url in {"", "https://"} or "51.77.244.194" in current_url:
+            if current_url in {"", "https://", "https://prodseller.com/v1"} or "51.77.244.194" in current_url:
                 fields["base_url"].set("https://canboso.com")
             fields["api_key_header"].set("X-API-Key")
             fields["order_poll_attempts"].set("1")
             fields["order_poll_delay_seconds"].set("0")
         elif current_url == "https://canboso.com":
-            fields["base_url"].set("https://")
+            fields["base_url"].set("https://prodseller.com/v1")
             fields["order_poll_attempts"].set("4")
             fields["order_poll_delay_seconds"].set("2")
 
@@ -283,7 +283,7 @@ def run_gui() -> int:
             "adapter": PRODSELLER_ADAPTER_CODE,
             "name": "",
             "code": "",
-            "base_url": "https://",
+            "base_url": "https://prodseller.com/v1",
             "api_key": "",
             "api_key_header": "X-API-Key",
             "markup_percent": "20",

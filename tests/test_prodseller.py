@@ -13,7 +13,12 @@ from app.services.external_purchases import (
     ExternalProviderBalanceLow,
     purchase_prodseller_product,
 )
-from app.services.prodseller import ProdSellerClient
+from app.services.prodseller import (
+    DEFAULT_PRODSELLER_BASE_URL,
+    ProdSellerAPIError,
+    ProdSellerClient,
+    normalize_prodseller_base_url,
+)
 from app.services.provider_catalog import sync_prodseller_catalog
 
 
@@ -26,6 +31,63 @@ def client_with_handler(handler) -> ProdSellerClient:  # type: ignore[no-untyped
         cache_seconds=0,
         transport=httpx.MockTransport(handler),
     )
+
+
+def test_legacy_prodseller_urls_are_upgraded_to_current_https_endpoint() -> None:
+    assert normalize_prodseller_base_url("http://51.77.244.194/v1/") == (
+        DEFAULT_PRODSELLER_BASE_URL
+    )
+    assert normalize_prodseller_base_url("http://prodseller.com/v1") == (
+        DEFAULT_PRODSELLER_BASE_URL
+    )
+    assert normalize_prodseller_base_url("https://provider.test/v1") == (
+        "https://provider.test/v1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_client_uses_current_endpoint_when_legacy_ip_is_configured() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://prodseller.com/v1/products"
+        return httpx.Response(200, json={"products": []})
+
+    client = ProdSellerClient(
+        api_key="psk_test_key",
+        base_url="http://51.77.244.194/v1",
+        allow_insecure_http=True,
+        cache_seconds=0,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert client.base_url == DEFAULT_PRODSELLER_BASE_URL
+    assert await client.list_products(force_refresh=True) == []
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_redirect_error_does_not_expose_provider_html() -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            301,
+            headers={"Location": "https://redirect.test/v1/products"},
+            text="<html><body>nginx redirect page</body></html>",
+        )
+
+    client = ProdSellerClient(
+        api_key="psk_test_key",
+        base_url="https://redirect.test/v1",
+        allow_insecure_http=False,
+        cache_seconds=0,
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ProdSellerAPIError) as raised:
+        await client.list_products(force_refresh=True)
+
+    assert raised.value.status_code == 301
+    assert "https://prodseller.com/v1" in str(raised.value)
+    assert "<html>" not in str(raised.value)
+    await client.close()
 
 
 @pytest.mark.asyncio

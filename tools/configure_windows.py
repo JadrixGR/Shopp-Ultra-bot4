@@ -37,7 +37,7 @@ DEFAULTS: dict[str, str] = {
     "VERIFICATION_COOLDOWN_SECONDS": "15",
     "API_PROVIDERS_FILE": "data/providers.json",
     "PRODSELLER_ENABLED": "false",
-    "PRODSELLER_BASE_URL": "http://51.77.244.194/v1",
+    "PRODSELLER_BASE_URL": "https://prodseller.com/v1",
     "PRODSELLER_API_KEY": "",
     "PRODSELLER_ALLOW_INSECURE_HTTP": "false",
     "PRODSELLER_MARKUP_PERCENT": "20",
