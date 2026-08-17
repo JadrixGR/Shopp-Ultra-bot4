@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from sqlalchemy import select, update
@@ -450,6 +450,32 @@ async def purchase_provider_product(
         purchase_options=purchase_options,
         requested_quantity=requested_quantity,
     )
+    try:
+        exact_provider_cost = await client.quote_order(
+            external_product_id,
+            quantity=quote.quantity,
+            purchase_options=quote.purchase_options,
+        )
+    except ProdSellerOutOfStockError as exc:
+        raise ExternalOutOfStock from exc
+    except ProdSellerInsufficientBalanceError as exc:
+        raise ExternalProviderBalanceLow from exc
+    except ProdSellerAuthenticationError as exc:
+        raise ExternalProviderAuthenticationFailed from exc
+    except ProdSellerRateLimitError as exc:
+        raise ExternalProviderRateLimited from exc
+    except ProdSellerBadRequestError as exc:
+        raise ExternalPurchaseOptionsInvalid(str(exc)) from exc
+    except ProdSellerNotFoundError as exc:
+        async with session_factory() as session:
+            removed = await session.get(Product, product_id)
+            if removed is not None:
+                await mark_provider_product_removed(session, removed)
+        raise ExternalOutOfStock from exc
+    except (ProdSellerTransportError, ProdSellerServerError, ProdSellerAPIError) as exc:
+        raise ExternalProviderUnavailable from exc
+    if exact_provider_cost is not None:
+        quote = replace(quote, provider_cost=Decimal(exact_provider_cost))
     request_payload = ProdSellerClient.serialize_raw(
         {
             "quantity": quote.quantity,
@@ -475,10 +501,15 @@ async def purchase_provider_product(
         )
 
     try:
+        provider_purchase_options = {
+            **quote.purchase_options,
+            "_idempotency_key": reservation.purchase_code,
+            "_customer_reference": reservation.purchase_code,
+        }
         order = await client.create_order(
             reservation.provider_product_id,
             quantity=reservation.quantity,
-            purchase_options=quote.purchase_options,
+            purchase_options=provider_purchase_options,
         )
     except ProdSellerAmbiguousOrderError as exc:
         async with session_factory() as session:

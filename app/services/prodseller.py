@@ -117,6 +117,7 @@ class ProdSellerProduct:
     slot_durations: tuple[int, ...] = ()
     quantity_fixed: int = 1
     slot_pricing_mode: str | None = None
+    requires_activation_identifier: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -493,6 +494,22 @@ class ProdSellerClient:
         self._products_cache = None
         self._product_cache.pop(product_id, None)
         return order
+
+    async def quote_order(
+        self,
+        product_id: str,
+        *,
+        quantity: int = 1,
+        purchase_options: dict[str, Any] | None = None,
+    ) -> Decimal | None:
+        """Return an exact provider quote when the adapter exposes one.
+
+        Existing adapters calculate their cost from the catalog price. Provider
+        implementations with quantity tiers can override this method.
+        """
+
+        del product_id, quantity, purchase_options
+        return None
 
     async def get_order(self, order_id: str) -> ProdSellerOrder:
         order_id = order_id.strip()

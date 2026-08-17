@@ -17,6 +17,23 @@
       "allow_below_cost": false,
       "order_poll_attempts": 4,
       "order_poll_delay_seconds": 2
+    },
+    {
+      "code": "ventebot",
+      "name": "VenteBot",
+      "adapter": "ventebot_reseller_v1",
+      "enabled": true,
+      "base_url": "https://ventetelegrambotrailway-production.up.railway.app",
+      "api_key": "vbr_REEMPLAZA_CON_TU_CLAVE",
+      "api_key_header": "X-Reseller-Key",
+      "allow_insecure_http": false,
+      "markup_percent": "20.00",
+      "auto_sync_minutes": 10,
+      "cache_seconds": 60,
+      "timeout_seconds": 20,
+      "allow_below_cost": false,
+      "order_poll_attempts": 4,
+      "order_poll_delay_seconds": 2
     }
   ]
 }

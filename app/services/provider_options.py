@@ -18,6 +18,7 @@ _MAX_PROVIDER_QUANTITY = 100
 class ProviderProductOptions:
     requires_customer_email: bool = False
     requires_slot_months: bool = False
+    requires_activation_identifier: bool = False
     slot_durations: tuple[int, ...] = ()
     quantity_fixed: int = 1
     slot_pricing_mode: str | None = None
@@ -39,6 +40,7 @@ class ProviderProductOptions:
         return cls(
             requires_customer_email=bool(remote.requires_customer_email),
             requires_slot_months=requires_months,
+            requires_activation_identifier=bool(remote.requires_activation_identifier),
             slot_durations=durations,
             quantity_fixed=max(1, min(100, int(remote.quantity_fixed or 1))),
             slot_pricing_mode=(
@@ -48,7 +50,11 @@ class ProviderProductOptions:
 
     @property
     def requires_input(self) -> bool:
-        return self.requires_customer_email or self.requires_slot_months
+        return (
+            self.requires_customer_email
+            or self.requires_slot_months
+            or self.requires_activation_identifier
+        )
 
     @property
     def price_is_per_month(self) -> bool:
@@ -95,6 +101,14 @@ class ProviderProductOptions:
     ) -> dict[str, Any]:
         source = dict(raw or {})
         result: dict[str, Any] = {}
+
+        if self.requires_activation_identifier:
+            identifier = str(source.get("activation_identifier") or "").strip()
+            if not identifier or len(identifier) > 500:
+                raise ProdSellerBadRequestError(
+                    "Debes indicar un identificador de activación válido"
+                )
+            result["activation_identifier"] = identifier
 
         if self.requires_customer_email:
             email = str(source.get("customer_email") or "").strip()
@@ -156,6 +170,7 @@ def product_provider_options(product: Product) -> ProviderProductOptions:
     return ProviderProductOptions(
         requires_customer_email=bool(data.get("requires_customer_email", False)),
         requires_slot_months=requires_months,
+        requires_activation_identifier=bool(data.get("requires_activation_identifier", False)),
         slot_durations=durations,
         quantity_fixed=max(1, min(100, quantity_fixed)),
         slot_pricing_mode=pricing_mode,

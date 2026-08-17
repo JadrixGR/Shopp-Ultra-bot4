@@ -55,6 +55,7 @@ class PurchaseQuantityStates(StatesGroup):
 
 
 class ExternalPurchaseStates(StatesGroup):
+    waiting_activation_identifier = State()
     waiting_customer_email = State()
     waiting_slot_months = State()
     waiting_confirmation = State()

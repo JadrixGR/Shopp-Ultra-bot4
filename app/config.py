@@ -69,6 +69,24 @@ class Settings(BaseSettings):
         default=2.0, alias="PRODSELLER_ORDER_POLL_DELAY_SECONDS"
     )
 
+    # VenteBot Reseller API. These variables are convenient for Render; when
+    # enabled they are synchronized into the private providers.json file.
+    ventebot_enabled: bool = Field(default=False, alias="VENTEBOT_ENABLED")
+    ventebot_base_url: str = Field(
+        default="https://ventetelegrambotrailway-production.up.railway.app",
+        alias="VENTEBOT_BASE_URL",
+    )
+    ventebot_api_key: SecretStr | None = Field(default=None, alias="VENTEBOT_API_KEY")
+    ventebot_markup_percent: Decimal = Field(default=Decimal("20"), alias="VENTEBOT_MARKUP_PERCENT")
+    ventebot_auto_sync_minutes: int = Field(default=10, alias="VENTEBOT_AUTO_SYNC_MINUTES")
+    ventebot_cache_seconds: int = Field(default=60, alias="VENTEBOT_CACHE_SECONDS")
+    ventebot_timeout_seconds: float = Field(default=20.0, alias="VENTEBOT_TIMEOUT_SECONDS")
+    ventebot_allow_below_cost: bool = Field(default=False, alias="VENTEBOT_ALLOW_BELOW_COST")
+    ventebot_order_poll_attempts: int = Field(default=4, alias="VENTEBOT_ORDER_POLL_ATTEMPTS")
+    ventebot_order_poll_delay_seconds: float = Field(
+        default=2.0, alias="VENTEBOT_ORDER_POLL_DELAY_SECONDS"
+    )
+
     verification_cooldown_seconds: int = Field(default=15, alias="VERIFICATION_COOLDOWN_SECONDS")
     drop_pending_updates: bool = Field(default=False, alias="DROP_PENDING_UPDATES")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -91,6 +109,7 @@ class Settings(BaseSettings):
         "binance_api_key",
         "binance_api_secret",
         "prodseller_api_key",
+        "ventebot_api_key",
         mode="before",
     )
     @classmethod
@@ -135,6 +154,8 @@ class Settings(BaseSettings):
         "binance_verify_retry_delay_seconds",
         "prodseller_timeout_seconds",
         "prodseller_order_poll_delay_seconds",
+        "ventebot_timeout_seconds",
+        "ventebot_order_poll_delay_seconds",
     )
     @classmethod
     def validate_nonnegative_seconds(cls, value: float) -> float:
@@ -142,41 +163,41 @@ class Settings(BaseSettings):
             raise ValueError("Timeout/retry seconds must be between 0 and 120")
         return value
 
-    @field_validator("prodseller_markup_percent")
+    @field_validator("prodseller_markup_percent", "ventebot_markup_percent")
     @classmethod
     def validate_markup(cls, value: Decimal) -> Decimal:
         if value < 0 or value > 1000:
-            raise ValueError("PRODSELLER_MARKUP_PERCENT must be between 0 and 1000")
+            raise ValueError("Provider markup must be between 0 and 1000")
         return value.quantize(Decimal("0.01"))
 
-    @field_validator("prodseller_auto_sync_minutes")
+    @field_validator("prodseller_auto_sync_minutes", "ventebot_auto_sync_minutes")
     @classmethod
     def validate_auto_sync(cls, value: int) -> int:
         if value < 0 or value > 1440:
-            raise ValueError("PRODSELLER_AUTO_SYNC_MINUTES must be between 0 and 1440")
+            raise ValueError("Provider auto-sync minutes must be between 0 and 1440")
         return value
 
-    @field_validator("prodseller_cache_seconds")
+    @field_validator("prodseller_cache_seconds", "ventebot_cache_seconds")
     @classmethod
     def validate_provider_cache(cls, value: int) -> int:
         if value < 0 or value > 900:
-            raise ValueError("PRODSELLER_CACHE_SECONDS must be between 0 and 900")
+            raise ValueError("Provider cache seconds must be between 0 and 900")
         return value
 
-    @field_validator("prodseller_order_poll_attempts")
+    @field_validator("prodseller_order_poll_attempts", "ventebot_order_poll_attempts")
     @classmethod
     def validate_provider_poll_attempts(cls, value: int) -> int:
         if value < 1 or value > 10:
-            raise ValueError("PRODSELLER_ORDER_POLL_ATTEMPTS must be between 1 and 10")
+            raise ValueError("Provider order poll attempts must be between 1 and 10")
         return value
 
-    @field_validator("prodseller_base_url")
+    @field_validator("prodseller_base_url", "ventebot_base_url")
     @classmethod
     def validate_provider_url(cls, value: str) -> str:
         normalized = value.strip().rstrip("/")
         parsed = urlparse(normalized)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("PRODSELLER_BASE_URL must be a valid http:// or https:// URL")
+            raise ValueError("Provider base URL must be a valid http:// or https:// URL")
         return normalized
 
     @model_validator(mode="after")
@@ -192,6 +213,10 @@ class Settings(BaseSettings):
                 "ProdSeller uses plain HTTP. Set PRODSELLER_ALLOW_INSECURE_HTTP=true "
                 "only if you accept that the API key and delivered keys travel without TLS."
             )
+        if self.ventebot_enabled and self.ventebot_api_key is None:
+            raise ValueError("VENTEBOT_ENABLED=true requires VENTEBOT_API_KEY")
+        if self.ventebot_enabled and not self.ventebot_base_url.lower().startswith("https://"):
+            raise ValueError("VENTEBOT_BASE_URL must use HTTPS when VenteBot is enabled")
         return self
 
     @property
@@ -209,6 +234,10 @@ class Settings(BaseSettings):
     @property
     def prodseller_configured(self) -> bool:
         return bool(self.prodseller_enabled and self.prodseller_api_key)
+
+    @property
+    def ventebot_configured(self) -> bool:
+        return bool(self.ventebot_enabled and self.ventebot_api_key)
 
     def ensure_local_directories(self) -> None:
         if self.database_url.startswith("sqlite"):

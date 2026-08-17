@@ -195,6 +195,9 @@ def _quantity_selector_text(
 
 def _purchase_options_from_state(data: dict[str, object]) -> dict[str, object]:
     options: dict[str, object] = {}
+    activation_identifier = str(data.get("external_activation_identifier") or "").strip()
+    if activation_identifier:
+        options["activation_identifier"] = activation_identifier
     email = str(data.get("external_customer_email") or "").strip()
     if email:
         options["customer_email"] = email
@@ -249,6 +252,13 @@ async def _show_external_confirmation(
     await state.set_state(ExternalPurchaseStates.waiting_confirmation)
 
     details: list[str] = []
+    activation_identifier = str(options.get("activation_identifier") or "").strip()
+    if activation_identifier:
+        details.append(
+            f"Identificador de activación: <code>{h(activation_identifier)}</code>"
+            if language == "es"
+            else f"Activation identifier: <code>{h(activation_identifier)}</code>"
+        )
     email = str(options.get("customer_email") or "").strip()
     if email:
         details.append(
@@ -726,6 +736,24 @@ async def buy_execute_handler(
         external_provider_code=item.product.provider_code,
         external_purchase_quantity=quantity,
     )
+    if options.requires_activation_identifier:
+        await state.set_state(ExternalPurchaseStates.waiting_activation_identifier)
+        await callback.answer()
+        prompt = (
+            "🔑 <b>Identificador de activación</b>\n\n"
+            "Envía el correo, usuario o identificador que el proveedor debe activar. "
+            "Comprueba el dato antes de continuar."
+            if user.language == "es"
+            else "🔑 <b>Activation identifier</b>\n\n"
+            "Send the email, username, or identifier that the provider must activate. "
+            "Check it before continuing."
+        )
+        await answer_or_replace(
+            callback,
+            prompt,
+            external_purchase_cancel_keyboard(user.language, product_id=product_id, page=page),
+        )
+        return
     if options.requires_customer_email:
         await state.set_state(ExternalPurchaseStates.waiting_customer_email)
         await callback.answer()
@@ -773,6 +801,94 @@ async def buy_execute_handler(
         page=page,
         quantity=quantity,
     )
+
+
+@router.message(ExternalPurchaseStates.waiting_activation_identifier)
+async def external_activation_identifier_handler(
+    message: Message, state: FSMContext, ctx: AppContext
+) -> None:
+    data = await state.get_data()
+    product_id = _parse_int(str(data.get("external_product_id") or 0))
+    page = _parse_int(str(data.get("external_page") or 0))
+    identifier = (message.text or "").strip()
+
+    async with ctx.session_factory() as session:
+        user = await get_or_create_user(session, message.from_user)
+    if not identifier or len(identifier) > 500 or "\n" in identifier or "\r" in identifier:
+        await message.answer(
+            "❌ Identificador inválido. Envía un único correo, usuario o código."
+            if user.language == "es"
+            else "❌ Invalid identifier. Send one email, username, or code.",
+            reply_markup=external_purchase_cancel_keyboard(
+                user.language, product_id=product_id, page=page
+            ),
+        )
+        return
+
+    item = await _refresh_external_item(ctx, product_id)
+    if item is None or not item.product.active or not item.product.is_external:
+        await state.clear()
+        await message.answer(t(user.language, "product_unavailable"))
+        return
+    try:
+        loaded = await _load_external_remote(ctx, item)
+    except ProdSellerError:
+        logger.exception("Could not load provider requirements after activation identifier")
+        await state.clear()
+        await message.answer(
+            "⚠️ El proveedor no responde. Intenta nuevamente desde la tienda."
+            if user.language == "es"
+            else "⚠️ The provider is not responding. Start again from the store."
+        )
+        return
+    if loaded is None:
+        await state.clear()
+        await message.answer(t(user.language, "product_unavailable"))
+        return
+    _runtime, remote = loaded
+    await state.update_data(external_activation_identifier=identifier)
+
+    if remote.requires_customer_email:
+        await state.set_state(ExternalPurchaseStates.waiting_customer_email)
+        await message.answer(
+            "📧 <b>Correo para la activación</b>\n\n"
+            "Envía el correo que debe recibir el producto o la invitación."
+            if user.language == "es"
+            else "📧 <b>Activation email</b>\n\n"
+            "Send the email that should receive the product or invitation.",
+            reply_markup=external_purchase_cancel_keyboard(
+                user.language, product_id=product_id, page=page
+            ),
+        )
+        return
+    if remote.requires_slot_months:
+        await state.set_state(ExternalPurchaseStates.waiting_slot_months)
+        await message.answer(
+            "📅 <b>Elige la duración</b>\n\nSelecciona cuántos meses deseas comprar."
+            if user.language == "es"
+            else "📅 <b>Choose the duration</b>\n\nSelect how many months you want to buy.",
+            reply_markup=slot_duration_keyboard(
+                user.language,
+                product_id=product_id,
+                page=page,
+                durations=remote.slot_durations,
+            ),
+        )
+        return
+
+    try:
+        await _show_external_confirmation(
+            message,
+            state=state,
+            item=item,
+            remote=remote,
+            language=user.language,
+            balance=Decimal(user.balance),
+            page=page,
+        )
+    except ExternalPurchaseOptionsInvalid as exc:
+        await state.clear()
+        await message.answer(f"❌ {h(exc)}")
 
 
 @router.message(ExternalPurchaseStates.waiting_customer_email)
@@ -1106,11 +1222,11 @@ async def _execute_purchase(
             language=user.language,
             text_es=(
                 "❌ Faltan datos para este producto. Abre el producto nuevamente y completa "
-                "el correo o la duración solicitada."
+                "el identificador, correo o la duración solicitada."
             ),
             text_en=(
                 "❌ Required purchase data is missing. Open the product again and complete "
-                "the requested email or duration."
+                "the requested identifier, email, or duration."
             ),
         )
         return

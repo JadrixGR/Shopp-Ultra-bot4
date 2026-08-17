@@ -125,8 +125,8 @@ async def _show_providers_home(target: Message | CallbackQuery, ctx: AppContext)
         "La sincronización actualiza costo y stock, pero nunca cambia el precio de venta que "
         "hayas definido.\n\n"
         "Para agregar, editar o eliminar conexiones ejecuta <code>configurar_apis.bat</code> "
-        "y reinicia el bot. Esta versión incluye adaptadores para ProdSeller API v1 "
-        "y Canboso Buyer API 2.1."
+        "y reinicia el bot. Esta versión incluye adaptadores para ProdSeller API v1, "
+        "Canboso Buyer API 2.1 y VenteBot Reseller API 1.2."
     )
     if not runtimes:
         text += "\n\nNo hay proveedores activos."

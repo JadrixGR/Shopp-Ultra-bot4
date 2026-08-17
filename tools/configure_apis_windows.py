@@ -15,6 +15,7 @@ from app.services.provider_registry import (  # noqa: E402
     ADAPTER_LABELS,
     CANBOSO_ADAPTER_CODE,
     PRODSELLER_ADAPTER_CODE,
+    VENTEBOT_ADAPTER_CODE,
     ProviderConfig,
     ProviderConfigError,
     provider_slug,
@@ -122,9 +123,9 @@ def run_gui() -> int:
     ttk.Label(
         outer,
         text=(
-            "Registra múltiples conexiones ProdSeller API v1 o Canboso Telegram Buyer "
-            "API v1.2. Después reinicia el bot, sincroniza cada catálogo y selecciona "
-            "los productos desde /admin."
+            "Registra múltiples conexiones ProdSeller, Canboso o VenteBot Reseller. "
+            "Después reinicia el bot, sincroniza cada catálogo y selecciona los productos "
+            "desde /admin."
         ),
         wraplength=960,
     ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(34, 14))
@@ -183,7 +184,11 @@ def run_gui() -> int:
             widget: tk.Widget = ttk.Combobox(
                 editor,
                 textvariable=fields[key],
-                values=(PRODSELLER_ADAPTER_CODE, CANBOSO_ADAPTER_CODE),
+                values=(
+                    PRODSELLER_ADAPTER_CODE,
+                    CANBOSO_ADAPTER_CODE,
+                    VENTEBOT_ADAPTER_CODE,
+                ),
                 state="readonly",
             )
         else:
@@ -237,6 +242,7 @@ def run_gui() -> int:
         text=(
             "Canboso: usa https://canboso.com y la clave tgb_...; la autenticación se "
             "envía automáticamente como key, por lo que el campo Header se ignora. "
+            "VenteBot: usa la URL raíz de Railway, clave vbr_... y X-Reseller-Key. "
             "El código interno relaciona productos, compras e historial y no debe "
             "cambiarse después de guardar. Las claves se guardan en data\\providers.json."
         ),
@@ -250,13 +256,25 @@ def run_gui() -> int:
         adapter = str(fields["adapter"].get())
         current_url = str(fields["base_url"].get()).strip()
         if adapter == CANBOSO_ADAPTER_CODE:
-            if current_url in {"", "https://", "https://prodseller.com/v1"} or "51.77.244.194" in current_url:
+            if (
+                current_url in {"", "https://", "https://prodseller.com/v1"}
+                or "51.77.244.194" in current_url
+            ):
                 fields["base_url"].set("https://canboso.com")
             fields["api_key_header"].set("X-API-Key")
             fields["order_poll_attempts"].set("1")
             fields["order_poll_delay_seconds"].set("0")
-        elif current_url == "https://canboso.com":
+        elif adapter == VENTEBOT_ADAPTER_CODE:
+            fields["base_url"].set("https://ventetelegrambotrailway-production.up.railway.app")
+            fields["api_key_header"].set("X-Reseller-Key")
+            fields["order_poll_attempts"].set("4")
+            fields["order_poll_delay_seconds"].set("2")
+        elif current_url in {
+            "https://canboso.com",
+            "https://ventetelegrambotrailway-production.up.railway.app",
+        }:
             fields["base_url"].set("https://prodseller.com/v1")
+            fields["api_key_header"].set("X-API-Key")
             fields["order_poll_attempts"].set("4")
             fields["order_poll_delay_seconds"].set("2")
 

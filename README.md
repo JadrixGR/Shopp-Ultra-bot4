@@ -34,7 +34,7 @@ Archivos principales:
 
 # Shop Ultra Bot — entrega con instrucciones, emojis Premium y Multi-API
 
-Bot de tienda para Telegram desarrollado con Python, aiogram 3 y SQLite. Mantiene productos locales y externos en un catálogo unificado, conserva entregas e historial, admite varias conexiones ProdSeller y Canboso Buyer API, y agrega apariencia configurable, emojis Premium, anuncios, reembolsos y ajustes de saldo administrativos.
+Bot de tienda para Telegram desarrollado con Python, aiogram 3 y SQLite. Mantiene productos locales y externos en un catálogo unificado, conserva entregas e historial, admite varias conexiones ProdSeller, Canboso Buyer y VenteBot Reseller API, y agrega apariencia configurable, emojis Premium, anuncios, reembolsos y ajustes de saldo administrativos.
 
 ## Entrega con instrucciones y emojis Premium persistentes
 
@@ -250,7 +250,7 @@ data/providers.json
 
 No cambies el código interno de un proveedor después de vender productos vinculados a él.
 
-La versión incluida implementa dos adaptadores:
+La versión incluida implementa tres adaptadores:
 
 ```text
 prodseller_v1
@@ -264,6 +264,14 @@ canboso_buyer_v1
     GET  /api/telegram-buyer/products?key=...
     GET  /api/telegram-buyer/balance?key=...
     POST /api/telegram-buyer/purchase
+
+ventebot_reseller_v1
+    GET  /api/reseller/me
+    GET  /api/reseller/products
+    POST /api/reseller/quote
+    POST /api/reseller/orders
+    GET  /api/reseller/orders/{id}
+    POST /api/reseller/orders/{id}/activation-identifier
 ```
 
 Canboso admite productos que solicitan el correo del cliente y una duración. El bot pide esos datos antes de confirmar la compra, calcula el total según los meses seleccionados y guarda la entrega en el historial. Una API con endpoints o respuestas JSON diferentes necesita otro adaptador específico.
@@ -280,6 +288,13 @@ Canboso admite productos que solicitan el correo del cliente y una duración. El
 8. Ejecuta **Probar conexión**, **Sincronizar catálogo** y luego **Seleccionar productos**.
 
 La clave se guarda únicamente en `data/providers.json`. No la pegues en el código ni compartas ese archivo.
+
+### Configurar VenteBot Reseller en Render
+
+VenteBot puede configurarse directamente con variables privadas de Render. El bot crea o
+actualiza automáticamente la conexión `ventebot` dentro de `/var/data/providers.json`.
+Consulta [CONFIGURAR_VENTEBOT_RENDER.md](CONFIGURAR_VENTEBOT_RENDER.md) para ver las
+variables exactas, la publicación y la verificación desde Telegram.
 
 ## Selección y avisos de productos externos
 

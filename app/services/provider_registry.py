@@ -14,15 +14,28 @@ from urllib.parse import urlparse
 from app.config import Settings
 from app.services.canboso_buyer import CanbosoBuyerClient
 from app.services.prodseller import ProdSellerClient, normalize_prodseller_base_url
+from app.services.ventebot_reseller import (
+    DEFAULT_BASE_URL as DEFAULT_VENTEBOT_BASE_URL,
+)
+from app.services.ventebot_reseller import (
+    VenteBotResellerClient,
+    normalize_ventebot_base_url,
+)
 
 logger = logging.getLogger(__name__)
 
 PRODSELLER_ADAPTER_CODE = "prodseller_v1"
 CANBOSO_ADAPTER_CODE = "canboso_buyer_v1"
-SUPPORTED_ADAPTERS = {PRODSELLER_ADAPTER_CODE, CANBOSO_ADAPTER_CODE}
+VENTEBOT_ADAPTER_CODE = "ventebot_reseller_v1"
+SUPPORTED_ADAPTERS = {
+    PRODSELLER_ADAPTER_CODE,
+    CANBOSO_ADAPTER_CODE,
+    VENTEBOT_ADAPTER_CODE,
+}
 ADAPTER_LABELS = {
     PRODSELLER_ADAPTER_CODE: "ProdSeller API v1",
     CANBOSO_ADAPTER_CODE: "Canboso Buyer API 2.1",
+    VENTEBOT_ADAPTER_CODE: "VenteBot Reseller API 1.2",
 }
 _CODE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,30}[a-z0-9]$")
 
@@ -108,6 +121,8 @@ class ProviderConfig:
             if upgraded_base_url != base_url:
                 base_url = upgraded_base_url
                 allow_http = False
+        elif adapter == VENTEBOT_ADAPTER_CODE:
+            base_url = normalize_ventebot_base_url(base_url)
 
         if not name:
             raise ProviderConfigError("El proveedor debe tener un nombre")
@@ -297,6 +312,30 @@ def _legacy_prodseller(settings: Settings) -> ProviderConfig | None:
     )
 
 
+def _environment_ventebot(settings: Settings) -> ProviderConfig | None:
+    if not settings.ventebot_configured or settings.ventebot_api_key is None:
+        return None
+    return ProviderConfig.from_dict(
+        {
+            "code": "ventebot",
+            "name": "VenteBot",
+            "adapter": VENTEBOT_ADAPTER_CODE,
+            "enabled": True,
+            "base_url": settings.ventebot_base_url or DEFAULT_VENTEBOT_BASE_URL,
+            "api_key": settings.ventebot_api_key.get_secret_value(),
+            "api_key_header": "X-Reseller-Key",
+            "allow_insecure_http": False,
+            "markup_percent": str(settings.ventebot_markup_percent),
+            "auto_sync_minutes": settings.ventebot_auto_sync_minutes,
+            "cache_seconds": settings.ventebot_cache_seconds,
+            "timeout_seconds": settings.ventebot_timeout_seconds,
+            "allow_below_cost": settings.ventebot_allow_below_cost,
+            "order_poll_attempts": settings.ventebot_order_poll_attempts,
+            "order_poll_delay_seconds": settings.ventebot_order_poll_delay_seconds,
+        }
+    )
+
+
 def load_provider_configs(settings: Settings) -> list[ProviderConfig]:
     path = Path(settings.api_providers_file)
     raw = _read_json(path)
@@ -311,11 +350,31 @@ def load_provider_configs(settings: Settings) -> list[ProviderConfig]:
         configs.append(config)
         seen.add(config.code)
 
+    changed = False
     legacy = _legacy_prodseller(settings)
     if legacy is not None and legacy.code not in seen:
         configs.append(legacy)
-        save_provider_configs(path, configs)
+        seen.add(legacy.code)
+        changed = True
         logger.info("Imported legacy PRODSELLER_* settings into %s", path)
+
+    environment_ventebot = _environment_ventebot(settings)
+    if environment_ventebot is not None:
+        for index, config in enumerate(configs):
+            if config.code == environment_ventebot.code:
+                if config != environment_ventebot:
+                    configs[index] = environment_ventebot
+                    changed = True
+                break
+        else:
+            configs.append(environment_ventebot)
+            seen.add(environment_ventebot.code)
+            changed = True
+        if changed:
+            logger.info("Synchronized VENTEBOT_* settings into %s", path)
+
+    if changed:
+        save_provider_configs(path, configs)
     return configs
 
 
@@ -327,6 +386,8 @@ def build_provider_registry(settings: Settings) -> ProviderRegistry:
         client_class: type[ProdSellerClient]
         if config.adapter == CANBOSO_ADAPTER_CODE:
             client_class = CanbosoBuyerClient
+        elif config.adapter == VENTEBOT_ADAPTER_CODE:
+            client_class = VenteBotResellerClient
         else:
             client_class = ProdSellerClient
         client = client_class(
