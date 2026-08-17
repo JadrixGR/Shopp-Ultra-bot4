@@ -17,6 +17,7 @@ from app.services.prodseller import (
     DEFAULT_PRODSELLER_BASE_URL,
     ProdSellerAPIError,
     ProdSellerClient,
+    ProdSellerServerError,
     normalize_prodseller_base_url,
 )
 from app.services.provider_catalog import sync_prodseller_catalog
@@ -40,9 +41,7 @@ def test_legacy_prodseller_urls_are_upgraded_to_current_https_endpoint() -> None
     assert normalize_prodseller_base_url("http://prodseller.com/v1") == (
         DEFAULT_PRODSELLER_BASE_URL
     )
-    assert normalize_prodseller_base_url("https://provider.test/v1") == (
-        "https://provider.test/v1"
-    )
+    assert normalize_prodseller_base_url("https://provider.test/v1") == ("https://provider.test/v1")
 
 
 @pytest.mark.asyncio
@@ -62,6 +61,130 @@ async def test_client_uses_current_endpoint_when_legacy_ip_is_configured() -> No
     assert client.base_url == DEFAULT_PRODSELLER_BASE_URL
     assert await client.list_products(force_refresh=True) == []
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_official_catalog_loads_exact_stock_from_product_details() -> None:
+    paths: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == "/v1/products":
+            return httpx.Response(
+                200,
+                json={
+                    "products": [
+                        {
+                            "id": "gemini-18m",
+                            "name": "Gemini Pro 18Months (link)",
+                            "price": 0.42,
+                            "sold": 62205,
+                            "inStock": True,
+                            "delivery": {"type": "instant"},
+                        }
+                    ]
+                },
+            )
+        if request.url.path == "/v1/products/gemini-18m":
+            return httpx.Response(
+                200,
+                json={
+                    "id": "gemini-18m",
+                    "name": "Gemini Pro 18Months (link)",
+                    "price": 0.42,
+                    "stock": 1004,
+                    "delivery": {"type": "instant"},
+                },
+            )
+        raise AssertionError(request.url)
+
+    client = ProdSellerClient(
+        api_key="psk_test_key",
+        base_url="https://prodseller.com/v1",
+        allow_insecure_http=False,
+        cache_seconds=60,
+        transport=httpx.MockTransport(handler),
+    )
+
+    products = await client.list_products(force_refresh=True)
+    cached = await client.list_products()
+
+    assert products[0].stock == 1004
+    assert products[0].sold == 62205
+    assert cached[0].stock == 1004
+    assert paths == ["/v1/products", "/v1/products/gemini-18m"]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_detail_failure_does_not_replace_last_exact_stock() -> None:
+    detail_fails = False
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/products":
+            return httpx.Response(
+                200,
+                json={
+                    "products": [
+                        {
+                            "id": "outlook-stock",
+                            "name": "Emails Outlook/hotmail",
+                            "price": 0.02,
+                            "inStock": True,
+                        }
+                    ]
+                },
+            )
+        if request.url.path == "/v1/products/outlook-stock":
+            if detail_fails:
+                return httpx.Response(500, json={"error": "temporary error"})
+            return httpx.Response(
+                200,
+                json={
+                    "id": "outlook-stock",
+                    "name": "Emails Outlook/hotmail",
+                    "price": 0.02,
+                    "stock": 1004,
+                },
+            )
+        raise AssertionError(request.url)
+
+    client = ProdSellerClient(
+        api_key="psk_test_key",
+        base_url="https://prodseller.com/v1",
+        allow_insecure_http=False,
+        cache_seconds=0,
+        transport=httpx.MockTransport(handler),
+    )
+    engine, factory = create_engine_and_session_factory("sqlite+aiosqlite:///:memory:")
+    await init_database(engine)
+
+    async with factory() as session:
+        await sync_prodseller_catalog(
+            session,
+            client,
+            markup_percent=Decimal("20"),
+            update_prices=False,
+        )
+
+    detail_fails = True
+    async with factory() as session:
+        with pytest.raises(ProdSellerServerError):
+            await sync_prodseller_catalog(
+                session,
+                client,
+                markup_percent=Decimal("20"),
+                update_prices=False,
+            )
+
+    async with factory() as session:
+        product = await session.scalar(select(Product))
+        assert product is not None
+        assert product.provider_stock == 1004
+        assert product.provider_reported_stock == 1004
+
+    await client.close()
+    await engine.dispose()
 
 
 @pytest.mark.asyncio

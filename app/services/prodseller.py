@@ -309,6 +309,10 @@ class ProdSellerClient:
         self.base_url = base_url
         self.provider_name = provider_name
         self.cache_seconds = max(0, cache_seconds)
+        self._catalog_stock_requires_details = parsed.hostname in {
+            "prodseller.com",
+            "www.prodseller.com",
+        }
         self._client = httpx.AsyncClient(
             headers={
                 api_key_header: api_key,
@@ -428,6 +432,24 @@ class ProdSellerClient:
                     response_data=data,
                 )
             products = tuple(_parse_product(item) for item in data["products"])
+            if self._catalog_stock_requires_details:
+                semaphore = asyncio.Semaphore(5)
+
+                async def with_exact_stock(product: ProdSellerProduct) -> ProdSellerProduct:
+                    if product.stock is not None or not product.in_stock:
+                        return product
+                    async with semaphore:
+                        details = await self._request("GET", f"/products/{product.id}")
+                    if not isinstance(details, dict):
+                        raise ProdSellerAPIError(
+                            "Provider returned invalid product details",
+                            response_data=details,
+                        )
+                    # The list includes fields such as sold/inStock while the
+                    # detail endpoint adds the exact stock count. Preserve both.
+                    return _parse_product({**product.raw, **details})
+
+                products = tuple(await asyncio.gather(*(with_exact_stock(p) for p in products)))
             self._products_cache = (time.monotonic(), products)
             for product in products:
                 self._product_cache[product.id] = (time.monotonic(), product)

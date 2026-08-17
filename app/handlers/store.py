@@ -333,7 +333,7 @@ async def _refresh_storefront_provider_catalogs(bot: Bot, ctx: AppContext) -> No
                 ctx.session_factory,
                 runtime,
                 force_refresh=True,
-                min_interval_seconds=60,
+                min_interval_seconds=120,
             )
         except ProdSellerError:
             logger.exception("Could not synchronize storefront provider %s", runtime.config.code)
