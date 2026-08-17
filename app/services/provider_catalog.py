@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -12,7 +13,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Product
-from app.services.notifications import ProductNotice, broadcast_catalog_update
+from app.services.notifications import (
+    ProductNotice,
+    broadcast_catalog_update,
+    broadcast_stock_update,
+)
 from app.services.prodseller import (
     PROVIDER_CODE,
     ProdSellerClient,
@@ -44,6 +49,16 @@ class ProviderProductChange:
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderStockIncrease:
+    product_id: int
+    name: str
+    price: Decimal
+    added: int
+    available: int
+    button_emoji: str = "🛍️"
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderSyncResult:
     received: int
     created: int
@@ -53,6 +68,7 @@ class ProviderSyncResult:
     created_products: tuple[ProviderProductChange, ...] = ()
     published_products: tuple[ProviderProductChange, ...] = ()
     restocked_products: tuple[ProviderProductChange, ...] = ()
+    stock_increased_products: tuple[ProviderStockIncrease, ...] = ()
 
 
 def retail_price(cost: Decimal, markup_percent: Decimal) -> Decimal:
@@ -108,6 +124,7 @@ async def sync_provider_catalog(
     created_rows: list[Product] = []
     published_rows: list[Product] = []
     restocked_rows: list[Product] = []
+    stock_increases: list[ProviderStockIncrease] = []
 
     for remote in remote_products:
         seen.add(remote.id)
@@ -132,6 +149,7 @@ async def sync_provider_catalog(
                 external_product_id=remote.id,
                 provider_cost=remote_cost,
                 provider_stock=remote_stock,
+                provider_reported_stock=remote_stock,
                 provider_in_stock=remote.in_stock,
                 provider_catalog_present=True,
                 provider_image_url=remote.image_url,
@@ -151,10 +169,12 @@ async def sync_provider_catalog(
             in_stock=product.provider_in_stock,
             stock=product.provider_stock,
         )
+        previous_reported_stock = product.provider_reported_stock
         # Only provider-owned metadata is refreshed. Retail price and selection
         # intentionally stay exactly as the administrator left them.
         product.provider_cost = remote_cost
         product.provider_stock = remote_stock
+        product.provider_reported_stock = remote_stock
         product.provider_in_stock = remote.in_stock
         product.provider_catalog_present = True
         product.provider_image_url = remote.image_url
@@ -163,6 +183,24 @@ async def sync_provider_catalog(
         is_available = _available(in_stock=remote.in_stock, stock=remote_stock)
         if product.active and not was_available and is_available:
             restocked_rows.append(product)
+        elif (
+            product.active
+            and was_available
+            and is_available
+            and previous_reported_stock is not None
+            and remote_stock is not None
+            and remote_stock > previous_reported_stock
+        ):
+            stock_increases.append(
+                ProviderStockIncrease(
+                    product_id=product.id,
+                    name=product.name,
+                    price=Decimal(product.price),
+                    added=remote_stock - previous_reported_stock,
+                    available=remote_stock,
+                    button_emoji=product.button_emoji,
+                )
+            )
         updated += 1
 
     unavailable = 0
@@ -172,6 +210,7 @@ async def sync_provider_catalog(
                 unavailable += 1
             product.provider_in_stock = False
             product.provider_stock = 0
+            product.provider_reported_stock = 0
             product.provider_catalog_present = False
             product.active = False
             product.provider_synced_at = now
@@ -198,9 +237,45 @@ async def sync_provider_catalog(
         created_products=changes(created_rows),
         published_products=changes(published_rows),
         restocked_products=changes(restocked_rows),
+        stock_increased_products=tuple(stock_increases),
     )
     await session.commit()
     return result
+
+
+async def sync_runtime_catalog(
+    session_factory: async_sessionmaker[AsyncSession],
+    runtime: ProviderRuntime,
+    *,
+    force_refresh: bool = True,
+    min_interval_seconds: float = 0.0,
+) -> ProviderSyncResult | None:
+    """Synchronize one runtime without concurrent or duplicate refreshes."""
+
+    async with runtime.catalog_sync_lock:
+        now = time.monotonic()
+        if (
+            min_interval_seconds > 0
+            and runtime.last_catalog_sync_at > 0
+            and now - runtime.last_catalog_sync_at < min_interval_seconds
+        ):
+            return None
+        async with session_factory() as session:
+            auto_publish = await get_provider_auto_publish(
+                session,
+                runtime.config.code,
+                default=False,
+            )
+            result = await sync_provider_catalog(
+                session,
+                runtime.client,
+                provider_code=runtime.config.code,
+                markup_percent=runtime.config.markup_percent,
+                force_refresh=force_refresh,
+                new_products_active=auto_publish,
+            )
+        runtime.last_catalog_sync_at = time.monotonic()
+        return result
 
 
 async def refresh_provider_product(
@@ -234,6 +309,7 @@ async def mark_provider_product_removed(session: AsyncSession, product: Product)
 
     product.provider_in_stock = False
     product.provider_stock = 0
+    product.provider_reported_stock = 0
     product.provider_catalog_present = False
     product.active = False
     product.provider_synced_at = datetime.now(UTC)
@@ -262,6 +338,18 @@ async def notify_provider_sync_changes(
             session_factory,
             products=[item.notice() for item in result.restocked_products],
             restocked=True,
+        )
+
+    for item in result.stock_increased_products:
+        await broadcast_stock_update(
+            bot,
+            session_factory,
+            product_id=item.product_id,
+            product_name=item.name,
+            price=item.price,
+            added=item.added,
+            available=item.available,
+            button_emoji=item.button_emoji,
         )
 
     published_ids = {item.product_id for item in result.published_products}
@@ -305,20 +393,12 @@ async def provider_auto_sync_loop(
     delay = max(60, interval_minutes * 60)
     while True:
         try:
-            async with session_factory() as session:
-                auto_publish = await get_provider_auto_publish(
-                    session,
-                    runtime.config.code,
-                    default=False,
-                )
-                result = await sync_provider_catalog(
-                    session,
-                    runtime.client,
-                    provider_code=runtime.config.code,
-                    markup_percent=runtime.config.markup_percent,
-                    force_refresh=True,
-                    new_products_active=auto_publish,
-                )
+            result = await sync_runtime_catalog(
+                session_factory,
+                runtime,
+                force_refresh=True,
+            )
+            assert result is not None
             logger.info(
                 "%s catalog sync: received=%s created=%s updated=%s unavailable=%s",
                 runtime.config.name,
@@ -327,7 +407,11 @@ async def provider_auto_sync_loop(
                 result.updated,
                 result.unavailable,
             )
-            if bot is not None and (result.created_products or result.restocked_products):
+            if bot is not None and (
+                result.created_products
+                or result.restocked_products
+                or result.stock_increased_products
+            ):
                 await notify_provider_sync_changes(
                     bot,
                     session_factory,

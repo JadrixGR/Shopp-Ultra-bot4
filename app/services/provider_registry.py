@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ CANBOSO_ADAPTER_CODE = "canboso_buyer_v1"
 SUPPORTED_ADAPTERS = {PRODSELLER_ADAPTER_CODE, CANBOSO_ADAPTER_CODE}
 ADAPTER_LABELS = {
     PRODSELLER_ADAPTER_CODE: "ProdSeller API v1",
-    CANBOSO_ADAPTER_CODE: "Canboso Buyer API 1.2",
+    CANBOSO_ADAPTER_CODE: "Canboso Buyer API 2.1",
 }
 _CODE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,30}[a-z0-9]$")
 
@@ -206,6 +207,8 @@ class ProviderConfig:
 class ProviderRuntime:
     config: ProviderConfig
     client: ProdSellerClient
+    catalog_sync_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    last_catalog_sync_at: float = 0.0
 
 
 class ProviderRegistry:

@@ -54,6 +54,7 @@ async def _migrate_sqlite(connection) -> None:  # type: ignore[no-untyped-def]
         "external_product_id": "VARCHAR(128)",
         "provider_cost": "NUMERIC(18, 2)",
         "provider_stock": "INTEGER",
+        "provider_reported_stock": "INTEGER",
         "provider_in_stock": "BOOLEAN",
         "provider_catalog_present": "BOOLEAN NOT NULL DEFAULT 1",
         "provider_image_url": "TEXT",

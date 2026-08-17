@@ -83,6 +83,10 @@ class Product(Base):
     external_product_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     provider_cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     provider_stock: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Last exact inventory count observed during a catalog synchronization.
+    # Purchases may reduce provider_stock locally, but never this comparison
+    # baseline, so supplier restock notifications do not produce false positives.
+    provider_reported_stock: Mapped[int | None] = mapped_column(Integer, nullable=True)
     provider_in_stock: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # False means the provider removed this item from its current catalog. The
     # row is retained so historical orders continue to reference it safely.

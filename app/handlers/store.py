@@ -39,7 +39,11 @@ from app.services.external_purchases import (
     quote_external_purchase,
 )
 from app.services.prodseller import ProdSellerError, ProdSellerProduct
-from app.services.provider_catalog import refresh_provider_product
+from app.services.provider_catalog import (
+    notify_provider_sync_changes,
+    refresh_provider_product,
+    sync_runtime_catalog,
+)
 from app.services.provider_options import product_provider_options
 from app.services.purchases import (
     MAX_PURCHASE_QUANTITY,
@@ -320,9 +324,38 @@ async def _refresh_external_item(
         return item
 
 
+async def _refresh_storefront_provider_catalogs(bot: Bot, ctx: AppContext) -> None:
+    """Keep storefront counts fresh without duplicating concurrent API syncs."""
+
+    for runtime in ctx.providers.values():
+        try:
+            result = await sync_runtime_catalog(
+                ctx.session_factory,
+                runtime,
+                force_refresh=True,
+                min_interval_seconds=60,
+            )
+        except ProdSellerError:
+            logger.exception("Could not synchronize storefront provider %s", runtime.config.code)
+            continue
+        if result is not None and (
+            result.created_products or result.restocked_products or result.stock_increased_products
+        ):
+            ctx.spawn(
+                notify_provider_sync_changes(
+                    bot,
+                    ctx.session_factory,
+                    provider_name=runtime.config.name,
+                    result=result,
+                    admin_ids=ctx.config.admin_ids,
+                )
+            )
+
+
 @router.callback_query(F.data.startswith("shop:"))
-async def shop_handler(callback: CallbackQuery, ctx: AppContext) -> None:
+async def shop_handler(callback: CallbackQuery, bot: Bot, ctx: AppContext) -> None:
     await callback.answer()
+    await _refresh_storefront_provider_catalogs(bot, ctx)
     async with ctx.session_factory() as session:
         user = await get_or_create_user(session, callback.from_user)
         products, total = await list_active_products(session, page_size=None)

@@ -28,7 +28,7 @@ from app.services.prodseller import ProdSellerError
 from app.services.provider_catalog import (
     notify_provider_sync_changes,
     refresh_provider_product,
-    sync_provider_catalog,
+    sync_runtime_catalog,
 )
 from app.services.settings import get_provider_auto_publish, set_provider_auto_publish
 from app.utils import h, h_truncate, money, shorten
@@ -326,18 +326,16 @@ async def provider_sync(callback: CallbackQuery, bot: Bot, ctx: AppContext) -> N
     if runtime is None:
         await callback.answer("Proveedor no configurado", show_alert=True)
         return
+    async with ctx.session_factory() as session:
+        auto_publish = await get_provider_auto_publish(session, code, default=False)
     await callback.answer("Sincronizando catálogo…")
     try:
-        async with ctx.session_factory() as session:
-            auto_publish = await get_provider_auto_publish(session, code, default=False)
-            result = await sync_provider_catalog(
-                session,
-                runtime.client,
-                provider_code=code,
-                markup_percent=runtime.config.markup_percent,
-                force_refresh=True,
-                new_products_active=auto_publish,
-            )
+        result = await sync_runtime_catalog(
+            ctx.session_factory,
+            runtime,
+            force_refresh=True,
+        )
+        assert result is not None
     except ProdSellerError as exc:
         logger.exception("Provider catalog sync failed for %s", code)
         await callback.message.answer(
@@ -346,7 +344,7 @@ async def provider_sync(callback: CallbackQuery, bot: Bot, ctx: AppContext) -> N
         )
         return
 
-    if result.created_products or result.restocked_products:
+    if result.created_products or result.restocked_products or result.stock_increased_products:
         ctx.spawn(
             notify_provider_sync_changes(
                 bot,
@@ -363,6 +361,7 @@ async def provider_sync(callback: CallbackQuery, bot: Bot, ctx: AppContext) -> N
         f"Recibidos: <b>{result.received}</b>\n"
         f"Nuevos {new_status}: <b>{result.created}</b>\n"
         f"Stock/costo actualizados: <b>{result.updated}</b>\n"
+        f"Productos con más stock: <b>{len(result.stock_increased_products)}</b>\n"
         f"Disponibles nuevamente: <b>{len(result.restocked_products)}</b>\n"
         f"Ya no disponibles: <b>{result.unavailable}</b>\n"
         "Precios de venta modificados: <b>0</b>"

@@ -13,7 +13,12 @@ from app.models import Product, User
 from app.services.catalog import ProductWithStock, list_active_products, list_all_products
 from app.services.external_purchases import ExternalOutOfStock, purchase_provider_product
 from app.services.prodseller import ProdSellerClient
-from app.services.provider_catalog import sync_provider_catalog
+from app.services.provider_catalog import (
+    ProviderStockIncrease,
+    ProviderSyncResult,
+    notify_provider_sync_changes,
+    sync_provider_catalog,
+)
 from app.services.provider_registry import (
     ProviderConfig,
     build_provider_registry,
@@ -428,7 +433,7 @@ async def test_registry_loads_multiple_provider_connections_and_custom_headers(t
 
 @pytest.mark.asyncio
 async def test_provider_sync_reports_auto_published_and_restocked_products() -> None:
-    remote_state = {"inStock": True, "price": 2.0}
+    remote_state = {"inStock": True, "price": 2.0, "stock": 10}
 
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -440,6 +445,7 @@ async def test_provider_sync_reports_auto_published_and_restocked_products() -> 
                         "name": "Notice product",
                         "price": remote_state["price"],
                         "inStock": remote_state["inStock"],
+                        "stock": remote_state["stock"],
                     }
                 ]
             },
@@ -463,6 +469,7 @@ async def test_provider_sync_reports_auto_published_and_restocked_products() -> 
         assert first.published_products[0].price == Decimal("2.50")
 
     remote_state["inStock"] = False
+    remote_state["stock"] = 0
     async with factory() as session:
         second = await sync_provider_catalog(
             session,
@@ -474,6 +481,7 @@ async def test_provider_sync_reports_auto_published_and_restocked_products() -> 
 
     remote_state["inStock"] = True
     remote_state["price"] = 5.0
+    remote_state["stock"] = 5
     async with factory() as session:
         third = await sync_provider_catalog(
             session,
@@ -487,9 +495,90 @@ async def test_provider_sync_reports_auto_published_and_restocked_products() -> 
         assert product is not None
         assert product.active is True
         assert product.provider_cost == Decimal("5.00")
+        assert product.provider_reported_stock == 5
         assert product.price == Decimal("2.50")
         assert len(third.restocked_products) == 1
+        assert third.stock_increased_products == ()
         assert third.restocked_products[0].product_id == product.id
+
+    remote_state["stock"] = 12
+    async with factory() as session:
+        fourth = await sync_provider_catalog(
+            session,
+            provider,
+            provider_code="notice_provider",
+            markup_percent=Decimal("25"),
+        )
+        assert fourth.restocked_products == ()
+        assert len(fourth.stock_increased_products) == 1
+        increase = fourth.stock_increased_products[0]
+        assert increase.added == 7
+        assert increase.available == 12
+
+        product = await session.scalar(
+            select(Product).where(Product.provider_code == "notice_provider")
+        )
+        assert product is not None
+        product.active = False
+        await session.commit()
+
+    remote_state["stock"] = 20
+    async with factory() as session:
+        fifth = await sync_provider_catalog(
+            session,
+            provider,
+            provider_code="notice_provider",
+            markup_percent=Decimal("25"),
+        )
+        assert fifth.stock_increased_products == ()
 
     await provider.close()
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_provider_stock_increase_is_broadcast_with_exact_quantity(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    async def fake_broadcast(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(kwargs)
+
+    monkeypatch.setattr(
+        "app.services.provider_catalog.broadcast_stock_update",
+        fake_broadcast,
+    )
+    result = ProviderSyncResult(
+        received=1,
+        created=0,
+        updated=1,
+        unavailable=0,
+        stock_increased_products=(
+            ProviderStockIncrease(
+                product_id=91,
+                name="Visible product",
+                price=Decimal("0.60"),
+                added=100,
+                available=1004,
+                button_emoji="🔥",
+            ),
+        ),
+    )
+
+    await notify_provider_sync_changes(
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        provider_name="Sahara",
+        result=result,
+        admin_ids=(),
+    )
+
+    assert calls == [
+        {
+            "product_id": 91,
+            "product_name": "Visible product",
+            "price": Decimal("0.60"),
+            "added": 100,
+            "available": 1004,
+            "button_emoji": "🔥",
+        }
+    ]
