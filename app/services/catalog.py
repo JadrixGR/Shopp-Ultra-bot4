@@ -37,9 +37,10 @@ class ProductWithStock:
             return "Agotado" if language == "es" else "Sold out"
         if self.external_stock_known:
             return str(self.stock)
-        # This value is only used in administrative/direct views. Products
-        # without an exact provider count use only a colored storefront marker.
-        return "No informado" if language == "es" else "Not reported"
+        # The provider confirms that the product can be purchased but does not
+        # publish an exact count. Customer-facing details must describe the
+        # availability without presenting a fabricated quantity.
+        return "🟢 En stock" if language == "es" else "🟢 In stock"
 
     def storefront_stock_label(self, language: str = "es") -> str:
         if self.is_external and self.available and not self.external_stock_known:
