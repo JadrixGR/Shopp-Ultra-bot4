@@ -5,6 +5,7 @@ import logging
 from decimal import Decimal
 
 from aiogram import Bot, F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy import select
@@ -217,6 +218,49 @@ async def _resolve_pending_deposit(
                 if deposit.status != "pending":
                     deposit = None
     return deposit, user, profile, expired
+
+
+async def _restore_pending_deposit_state(
+    message: Message,
+    state: FSMContext,
+    ctx: AppContext,
+) -> bool:
+    """Restore the Binance flow after an application restart.
+
+    Render restarts clear aiogram's in-memory FSM, but the pending deposit is
+    persisted in SQLite. Reconnecting the latest pending request prevents a
+    valid Order ID from being silently ignored after such a restart.
+    """
+
+    async with ctx.session_factory() as session:
+        user = await get_or_create_user(session, message.from_user)
+        deposit_id = await session.scalar(
+            select(Deposit.id)
+            .where(Deposit.user_id == user.id, Deposit.status == "pending")
+            .order_by(Deposit.id.desc())
+            .limit(1)
+        )
+    if deposit_id is None:
+        return False
+    await state.set_state(DepositStates.waiting_transaction_id)
+    await state.update_data(deposit_id=int(deposit_id))
+    return True
+
+
+async def _report_unexpected_payment_error(
+    message: Message,
+    ctx: AppContext,
+    exc: Exception,
+) -> None:
+    logger.exception("Unexpected error while accepting a Binance Order ID", exc_info=exc)
+    language = "es"
+    try:
+        async with ctx.session_factory() as session:
+            user = await get_or_create_user(session, message.from_user)
+            language = user.language
+    except Exception:
+        logger.exception("Could not load the user after a Binance payment error")
+    await message.answer(t(language, "payment_processing_error"))
 
 
 async def _credit_verified_deposit(
@@ -469,8 +513,7 @@ async def _verify_deposit(
     )
 
 
-@router.message(DepositStates.waiting_transaction_id)
-async def transaction_id_handler(
+async def _process_transaction_id_message(
     message: Message,
     state: FSMContext,
     bot: Bot,
@@ -509,6 +552,7 @@ async def transaction_id_handler(
         await message.answer(t(user.language, "verify_wait", seconds=wait_for))
         return
 
+    status_message = await message.answer(t(user.language, "checking_payment"))
     async with ctx.session_factory() as session:
         registered = await register_verification_attempt(
             session,
@@ -517,7 +561,7 @@ async def transaction_id_handler(
         )
     if registered is None:
         await state.clear()
-        await message.answer(
+        await status_message.edit_text(
             t(
                 user.language,
                 "deposit_expired",
@@ -527,7 +571,6 @@ async def transaction_id_handler(
         await show_main_menu(message, ctx)
         return
 
-    status_message = await message.answer(t(user.language, "checking_payment"))
     await _verify_deposit(
         status_message=status_message,
         deposit=deposit,
@@ -538,6 +581,41 @@ async def transaction_id_handler(
         ctx=ctx,
         state=state,
     )
+
+
+@router.message(DepositStates.waiting_transaction_id)
+async def transaction_id_handler(
+    message: Message,
+    state: FSMContext,
+    bot: Bot,
+    ctx: AppContext,
+) -> None:
+    try:
+        await _process_transaction_id_message(message, state, bot, ctx)
+    except Exception as exc:
+        await _report_unexpected_payment_error(message, ctx, exc)
+
+
+@router.message(StateFilter(None), F.text)
+async def recover_pending_transaction_handler(
+    message: Message,
+    state: FSMContext,
+    bot: Bot,
+    ctx: AppContext,
+) -> None:
+    """Accept an Order ID whose in-memory FSM state was lost on restart."""
+
+    try:
+        extract_transaction_reference(message.text or "")
+    except ValueError:
+        return
+    try:
+        restored = await _restore_pending_deposit_state(message, state, ctx)
+        if not restored:
+            return
+        await _process_transaction_id_message(message, state, bot, ctx)
+    except Exception as exc:
+        await _report_unexpected_payment_error(message, ctx, exc)
 
 
 @router.callback_query(F.data.startswith("wallet:retry:"))

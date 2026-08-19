@@ -193,6 +193,18 @@ def test_reference_normalization_accepts_number_without_prefix() -> None:
     assert display_transaction_reference(f"M_P_{numeric}") == numeric
 
 
+@pytest.mark.parametrize(
+    "numeric",
+    [
+        "449524645560909824",
+        "449526558751916032",
+    ],
+)
+def test_reported_customer_order_ids_are_accepted(numeric: str) -> None:
+    assert extract_transaction_reference(numeric) == numeric
+    assert canonical_transaction_reference(numeric) == f"M_P_{numeric}"
+
+
 def test_reference_candidates_ignore_account_ids() -> None:
     transaction = {
         "transactionId": "M_P_442711457387806720",

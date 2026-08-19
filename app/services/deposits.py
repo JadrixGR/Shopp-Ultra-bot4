@@ -176,6 +176,10 @@ async def expire_pending_deposit(
             failure_reason=DEPOSIT_EXPIRATION_REASON,
             verified_at=current,
         )
+        # SQLite returns naive datetimes even for DateTime(timezone=True). Do
+        # not let SQLAlchemy re-evaluate this UTC comparison against an ORM
+        # object already loaded in the session; the database is authoritative.
+        .execution_options(synchronize_session=False)
         .returning(Deposit.id)
     )
     await session.commit()
@@ -222,6 +226,7 @@ async def expire_due_deposits(
                     failure_reason=DEPOSIT_EXPIRATION_REASON,
                     verified_at=current,
                 )
+                .execution_options(synchronize_session=False)
                 .returning(Deposit.id)
             )
         ).all()

@@ -172,6 +172,10 @@ TEXTS: dict[str, dict[str, str]] = {
             "configurada. La solicitud se cancelará al vencer el plazo indicado."
         ),
         "payment_duplicate": "❌ Ese Transaction ID ya fue acreditado anteriormente.",
+        "payment_processing_error": (
+            "⚠️ No se pudo procesar el Order ID por un error interno. "
+            "Tu solicitud continúa guardada; inténtalo nuevamente en unos segundos."
+        ),
         "payment_success": (
             "✅ <b>Pago confirmado</b>\n\n"
             "Recarga: <b>${amount}</b>\n"
@@ -397,6 +401,10 @@ TEXTS: dict[str, dict[str, str]] = {
             "The request will be cancelled when the stated deadline expires."
         ),
         "payment_duplicate": "❌ That Transaction ID was already credited.",
+        "payment_processing_error": (
+            "⚠️ The Order ID could not be processed because of an internal error. "
+            "Your request is still saved; try again in a few seconds."
+        ),
         "payment_success": (
             "✅ <b>Payment confirmed</b>\n\n"
             "Deposit: <b>${amount}</b>\n"
