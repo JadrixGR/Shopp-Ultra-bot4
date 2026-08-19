@@ -28,10 +28,13 @@ from app.services.binance import (
 )
 from app.services.deposits import (
     DepositAlreadyProcessed,
+    DepositExpired,
     DuplicateTransaction,
     cancel_pending_deposit,
     create_pending_deposit,
     credit_deposit,
+    deposit_expired_automatically,
+    expire_pending_deposit,
     register_verification_attempt,
     seconds_since,
     set_deposit_failure,
@@ -110,7 +113,12 @@ async def deposit_amount_handler(message: Message, state: FSMContext, ctx: AppCo
 
     async with ctx.session_factory() as session:
         user = await get_or_create_user(session, message.from_user)
-        deposit = await create_pending_deposit(session, user_id=user.id, amount=amount)
+        deposit = await create_pending_deposit(
+            session,
+            user_id=user.id,
+            amount=amount,
+            expiration_minutes=ctx.config.deposit_expiration_minutes,
+        )
     await state.update_data(deposit_id=deposit.id)
     await state.set_state(DepositStates.waiting_transaction_id)
     await message.answer(
@@ -120,6 +128,12 @@ async def deposit_amount_handler(message: Message, state: FSMContext, ctx: AppCo
             pay_id=h(profile.binance_pay_id),
             pay_name=h(profile.binance_pay_name),
             amount=money(amount),
+        )
+        + "\n\n"
+        + t(
+            user.language,
+            "deposit_deadline_notice",
+            minutes=ctx.config.deposit_expiration_minutes,
         ),
         reply_markup=payment_keyboard(user.language, profile.binance_pay_id),
     )
@@ -177,7 +191,7 @@ async def wallet_cancel_deposit_handler(
 
 async def _resolve_pending_deposit(
     message: Message, state: FSMContext, ctx: AppContext
-) -> tuple[Deposit | None, User, object]:
+) -> tuple[Deposit | None, User, object, bool]:
     data = await state.get_data()
     deposit_id = data.get("deposit_id")
     async with ctx.session_factory() as session:
@@ -186,13 +200,23 @@ async def _resolve_pending_deposit(
         deposit: Deposit | None = None
         if isinstance(deposit_id, int):
             deposit = await session.get(Deposit, deposit_id)
+            if deposit is not None and deposit.status == "pending":
+                await expire_pending_deposit(session, deposit_id=deposit.id)
+                await session.refresh(deposit)
+        expired = deposit_expired_automatically(deposit)
         if deposit is None or deposit.status != "pending":
             deposit = await session.scalar(
                 select(Deposit)
                 .where(Deposit.user_id == user.id, Deposit.status == "pending")
                 .order_by(Deposit.id.desc())
             )
-    return deposit, user, profile
+            if deposit is not None:
+                await expire_pending_deposit(session, deposit_id=deposit.id)
+                await session.refresh(deposit)
+                expired = expired or deposit_expired_automatically(deposit)
+                if deposit.status != "pending":
+                    deposit = None
+    return deposit, user, profile, expired
 
 
 async def _credit_verified_deposit(
@@ -218,8 +242,20 @@ async def _credit_verified_deposit(
     except DuplicateTransaction:
         await status_message.edit_text(t(user.language, "payment_duplicate"))
         return
+    except DepositExpired:
+        await status_message.edit_text(
+            t(user.language, "deposit_expired", amount=money(deposit.requested_amount))
+        )
+        if state is not None:
+            await state.clear()
+        return
     except DepositAlreadyProcessed:
-        await status_message.edit_text(t(user.language, "payment_duplicate"))
+        async with ctx.session_factory() as session:
+            current = await session.get(Deposit, deposit.id)
+        key = "deposit_expired" if deposit_expired_automatically(current) else "deposit_not_pending"
+        await status_message.edit_text(
+            t(user.language, key, amount=money(deposit.requested_amount))
+        )
         if state is not None:
             await state.clear()
         return
@@ -301,11 +337,22 @@ async def _verify_deposit(
             if observed:
                 failure_reason += f":recent={observed}"
             async with ctx.session_factory() as session:
-                await set_deposit_failure(
+                expired = await set_deposit_failure(
                     session,
                     deposit_id=deposit.id,
                     reason=failure_reason,
                 )
+            if expired:
+                await status_message.edit_text(
+                    t(
+                        user.language,
+                        "deposit_expired",
+                        amount=money(deposit.requested_amount),
+                    )
+                )
+                if state is not None:
+                    await state.clear()
+                return
             await status_message.edit_text(
                 t(user.language, "payment_not_found"),
                 reply_markup=retry_deposit_keyboard(user.language, deposit.id),
@@ -325,11 +372,22 @@ async def _verify_deposit(
             return
         except BinanceTransactionMismatch as exc:
             async with ctx.session_factory() as session:
-                await set_deposit_failure(
+                expired = await set_deposit_failure(
                     session,
                     deposit_id=deposit.id,
                     reason=f"mismatch:{exc.reason}",
                 )
+            if expired:
+                await status_message.edit_text(
+                    t(
+                        user.language,
+                        "deposit_expired",
+                        amount=money(deposit.requested_amount),
+                    )
+                )
+                if state is not None:
+                    await state.clear()
+                return
             await status_message.edit_text(
                 t(user.language, f"payment_mismatch_{exc.reason}"),
                 reply_markup=retry_deposit_keyboard(user.language, deposit.id),
@@ -339,11 +397,22 @@ async def _verify_deposit(
             logger.exception("Binance API failed for deposit %s", deposit.id)
             api_code = str(exc.code) if exc.code is not None else type(exc).__name__
             async with ctx.session_factory() as session:
-                await set_deposit_failure(
+                expired = await set_deposit_failure(
                     session,
                     deposit_id=deposit.id,
                     reason=f"api_error:{api_code}",
                 )
+            if expired:
+                await status_message.edit_text(
+                    t(
+                        user.language,
+                        "deposit_expired",
+                        amount=money(deposit.requested_amount),
+                    )
+                )
+                if state is not None:
+                    await state.clear()
+                return
             await status_message.edit_text(
                 t(user.language, "payment_api_error"),
                 reply_markup=retry_deposit_keyboard(user.language, deposit.id),
@@ -364,11 +433,22 @@ async def _verify_deposit(
         except Exception as exc:
             logger.exception("Unexpected Binance verification error for deposit %s", deposit.id)
             async with ctx.session_factory() as session:
-                await set_deposit_failure(
+                expired = await set_deposit_failure(
                     session,
                     deposit_id=deposit.id,
                     reason=f"internal_error:{type(exc).__name__}",
                 )
+            if expired:
+                await status_message.edit_text(
+                    t(
+                        user.language,
+                        "deposit_expired",
+                        amount=money(deposit.requested_amount),
+                    )
+                )
+                if state is not None:
+                    await state.clear()
+                return
             await status_message.edit_text(
                 t(user.language, "payment_api_error"),
                 reply_markup=retry_deposit_keyboard(user.language, deposit.id),
@@ -410,10 +490,16 @@ async def transaction_id_handler(
         )
         return
 
-    deposit, user, profile = await _resolve_pending_deposit(message, state, ctx)
+    deposit, user, profile, expired = await _resolve_pending_deposit(message, state, ctx)
     if deposit is None:
         await state.clear()
-        await message.answer(t(user.language, "cancelled"))
+        await message.answer(
+            t(
+                user.language,
+                "deposit_expired" if expired else "cancelled",
+                amount="0.00",
+            )
+        )
         await show_main_menu(message, ctx)
         return
 
@@ -424,11 +510,22 @@ async def transaction_id_handler(
         return
 
     async with ctx.session_factory() as session:
-        await register_verification_attempt(
+        registered = await register_verification_attempt(
             session,
             deposit_id=deposit.id,
             claimed_transaction_id=transaction_id,
         )
+    if registered is None:
+        await state.clear()
+        await message.answer(
+            t(
+                user.language,
+                "deposit_expired",
+                amount=money(deposit.requested_amount),
+            )
+        )
+        await show_main_menu(message, ctx)
+        return
 
     status_message = await message.answer(t(user.language, "checking_payment"))
     await _verify_deposit(
@@ -461,9 +558,20 @@ async def retry_deposit_handler(
         deposit = await session.get(Deposit, deposit_id)
         if deposit is not None and deposit.user_id != user.id:
             deposit = None
+        if deposit is not None and deposit.status == "pending":
+            await expire_pending_deposit(session, deposit_id=deposit.id)
+            await session.refresh(deposit)
 
     if deposit is None or deposit.status != "pending":
-        await callback.answer(t(user.language, "deposit_not_pending"), show_alert=True)
+        key = "deposit_expired" if deposit_expired_automatically(deposit) else "deposit_not_pending"
+        await callback.answer(
+            t(
+                user.language,
+                key,
+                amount=money(deposit.requested_amount) if deposit is not None else "0.00",
+            ),
+            show_alert=True,
+        )
         return
     transaction_id = (deposit.claimed_transaction_id or "").strip()
     if not transaction_id:
@@ -477,11 +585,21 @@ async def retry_deposit_handler(
         return
 
     async with ctx.session_factory() as session:
-        await register_verification_attempt(
+        registered = await register_verification_attempt(
             session,
             deposit_id=deposit.id,
             claimed_transaction_id=transaction_id,
         )
+    if registered is None:
+        await callback.answer(
+            t(
+                user.language,
+                "deposit_expired",
+                amount=money(deposit.requested_amount),
+            ),
+            show_alert=True,
+        )
+        return
 
     await callback.answer()
     status_message = await callback.message.answer(t(user.language, "checking_payment"))

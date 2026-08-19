@@ -17,6 +17,7 @@ from app.database import create_engine_and_session_factory, init_database
 from app.handlers import admin, appearance, common, management, providers, store, wallet
 from app.models import Product
 from app.services.binance import BinancePayHistoryClient
+from app.services.deposits import deposit_expiration_loop
 from app.services.provider_catalog import provider_auto_sync_loop
 from app.services.provider_registry import build_provider_registry
 from app.services.settings import seed_runtime_settings
@@ -125,6 +126,10 @@ async def run() -> None:
     dispatcher.include_router(providers.router)
     dispatcher.include_router(wallet.router)
     dispatcher.include_router(store.router)
+
+    # This persistent sweep cancels requests at their stored deadline and also
+    # catches deposits that expired while the worker was restarting.
+    ctx.spawn(deposit_expiration_loop(session_factory, bot))
 
     for runtime in providers_registry.values():
         if runtime.config.auto_sync_minutes > 0:

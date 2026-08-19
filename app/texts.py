@@ -121,6 +121,10 @@ TEXTS: dict[str, dict[str, str]] = {
             "📋 Después copia el <b>Binance Order ID / Transaction ID</b> y envíalo aquí.\n\n"
             "⚠️ Solo se acreditan pagos recibidos por este Pay ID. Cada ID se puede usar una sola vez."
         ),
+        "deposit_deadline_notice": (
+            "⏱️ Tienes <b>{minutes} minutos</b> para completar y verificar el pago. "
+            "Al vencer el plazo, esta solicitud se cancelará automáticamente."
+        ),
         "pay_not_configured": "❌ Binance Pay todavía no está configurado por el administrador.",
         "copy_pay_id": "📋 Copiar Pay ID",
         "where_order_id": "🆔 ¿Dónde encuentro el Order ID?",
@@ -138,6 +142,12 @@ TEXTS: dict[str, dict[str, str]] = {
             "Puedes corregirlo o pulsar <b>Cancelar transacción</b> para volver al menú."
         ),
         "deposit_not_pending": "Ese depósito ya no está pendiente.",
+        "deposit_expired": (
+            "⌛ <b>La solicitud de recarga venció</b>\n\n"
+            "El plazo terminó y la transacción fue cancelada automáticamente. "
+            "Crea una nueva recarga antes de pagar. Si ya enviaste el dinero, contacta al "
+            "administrador y conserva tu Binance Order ID."
+        ),
         "payment_not_found": (
             "❌ No se encontró ese pago todavía. Revisa el ID, espera unos segundos y vuelve a enviarlo."
         ),
@@ -154,10 +164,12 @@ TEXTS: dict[str, dict[str, str]] = {
         "payment_mismatch_receiver_pay_id": "❌ Ese pago fue dirigido a otro Pay ID.",
         "payment_mismatch_unsupported_order_type": "❌ Ese Order ID no corresponde a una transferencia válida para recargar.",
         "payment_api_error": (
-            "⚠️ Binance no pudo verificarse temporalmente. Tu solicitud quedó pendiente para revisión."
+            "⚠️ Binance no pudo verificarse temporalmente. Puedes intentarlo nuevamente antes "
+            "de que venza el plazo indicado."
         ),
         "payment_manual_review": (
-            "🕓 El pago quedó pendiente de revisión porque la verificación automática no está configurada."
+            "🕓 El pago quedó pendiente de revisión porque la verificación automática no está "
+            "configurada. La solicitud se cancelará al vencer el plazo indicado."
         ),
         "payment_duplicate": "❌ Ese Transaction ID ya fue acreditado anteriormente.",
         "payment_success": (
@@ -338,6 +350,10 @@ TEXTS: dict[str, dict[str, str]] = {
             "📋 Then copy the <b>Binance Order ID / Transaction ID</b> and send it here.\n\n"
             "⚠️ Only payments received by this Pay ID are credited. Each ID can be used once."
         ),
+        "deposit_deadline_notice": (
+            "⏱️ You have <b>{minutes} minutes</b> to complete and verify the payment. "
+            "When the deadline passes, this request will be cancelled automatically."
+        ),
         "pay_not_configured": "❌ Binance Pay has not been configured by the administrator yet.",
         "copy_pay_id": "📋 Copy Pay ID",
         "where_order_id": "🆔 Where is the Order ID?",
@@ -355,6 +371,12 @@ TEXTS: dict[str, dict[str, str]] = {
             "Correct it or press <b>Cancel transaction</b> to return to the menu."
         ),
         "deposit_not_pending": "That deposit is no longer pending.",
+        "deposit_expired": (
+            "⌛ <b>The deposit request expired</b>\n\n"
+            "The deadline passed and the transaction was cancelled automatically. "
+            "Create a new deposit before paying. If you already sent the money, contact the "
+            "administrator and keep your Binance Order ID."
+        ),
         "payment_not_found": "❌ Payment not found yet. Check the ID, wait a few seconds, and send it again.",
         "payment_mismatch": "❌ The transaction exists, but it does not match this request's Pay ID, amount, or time.",
         "payment_mismatch_amount": "❌ The Order ID exists, but its amount does not match this deposit.",
@@ -366,8 +388,14 @@ TEXTS: dict[str, dict[str, str]] = {
         "payment_mismatch_transaction_time": "❌ Binance did not return a valid payment time.",
         "payment_mismatch_receiver_pay_id": "❌ That payment was sent to another Pay ID.",
         "payment_mismatch_unsupported_order_type": "❌ That Order ID is not a valid transfer for a wallet deposit.",
-        "payment_api_error": "⚠️ Binance could not be checked temporarily. Your request is pending review.",
-        "payment_manual_review": "🕓 The payment is pending review because automatic verification is not configured.",
+        "payment_api_error": (
+            "⚠️ Binance could not be checked temporarily. You can try again before the "
+            "stated deadline expires."
+        ),
+        "payment_manual_review": (
+            "🕓 The payment is pending review because automatic verification is not configured. "
+            "The request will be cancelled when the stated deadline expires."
+        ),
         "payment_duplicate": "❌ That Transaction ID was already credited.",
         "payment_success": (
             "✅ <b>Payment confirmed</b>\n\n"

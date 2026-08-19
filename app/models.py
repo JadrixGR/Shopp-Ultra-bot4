@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -21,6 +21,10 @@ from app.database import Base
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def default_deposit_expiration() -> datetime:
+    return utcnow() + timedelta(minutes=14)
 
 
 class User(Base):
@@ -309,6 +313,9 @@ class Deposit(Base):
     raw_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=default_deposit_expiration, nullable=False
     )
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

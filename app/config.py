@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     support_username: str = Field(default="", alias="SUPPORT_USERNAME")
     bonus_tiers: str = Field(default="50:2,100:5", alias="BONUS_TIERS")
     min_deposit: Decimal = Field(default=Decimal("1.00"), alias="MIN_DEPOSIT")
+    deposit_expiration_minutes: int = Field(default=14, alias="DEPOSIT_EXPIRATION_MINUTES")
 
     binance_api_key: SecretStr | None = Field(default=None, alias="BINANCE_API_KEY")
     binance_api_secret: SecretStr | None = Field(default=None, alias="BINANCE_API_SECRET")
@@ -134,6 +135,13 @@ class Settings(BaseSettings):
         if value <= 0:
             raise ValueError("MIN_DEPOSIT must be greater than zero")
         return value.quantize(Decimal("0.01"))
+
+    @field_validator("deposit_expiration_minutes")
+    @classmethod
+    def validate_deposit_expiration_minutes(cls, value: int) -> int:
+        if value < 1 or value > 1440:
+            raise ValueError("DEPOSIT_EXPIRATION_MINUTES must be between 1 and 1440")
+        return value
 
     @field_validator("binance_history_hours")
     @classmethod

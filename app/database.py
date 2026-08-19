@@ -104,6 +104,19 @@ async def _migrate_sqlite(connection) -> None:  # type: ignore[no-untyped-def]
                 text(f'ALTER TABLE "provider_purchases" ADD COLUMN "{column}" {definition}')
             )
 
+    deposit_columns = await _sqlite_columns(connection, "deposits")
+    if "expires_at" not in deposit_columns:
+        await connection.execute(text('ALTER TABLE "deposits" ADD COLUMN "expires_at" DATETIME'))
+    # Existing pending requests used to have no lifetime. Backfill their fixed
+    # 14-minute deadline without changing credited or rejected history.
+    await connection.execute(
+        text(
+            "UPDATE deposits "
+            "SET expires_at = datetime(created_at, '+14 minutes') "
+            "WHERE expires_at IS NULL"
+        )
+    )
+
     await connection.execute(
         text(
             "CREATE UNIQUE INDEX IF NOT EXISTS "

@@ -87,6 +87,7 @@ _SAMPLE_VALUES: dict[str, object] = {
     "bonus": "1.00",
     "total": "21.00",
     "seconds": "10",
+    "minutes": "14",
     "user": "@cliente",
     "telegram_id": "123456789",
     "language": "Español",

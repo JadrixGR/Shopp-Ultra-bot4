@@ -15,6 +15,8 @@ services:
         value: sqlite+aiosqlite:////var/data/shop.db
       - key: API_PROVIDERS_FILE
         value: /var/data/providers.json
+      - key: DEPOSIT_EXPIRATION_MINUTES
+        value: "14"
       - key: RENDER_DATA_DIR
         value: /var/data
       - key: ALLOW_EMPTY_DATABASE
